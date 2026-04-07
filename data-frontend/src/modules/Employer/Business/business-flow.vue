@@ -8038,6 +8038,18 @@ function getBusinessAccountIdentity(user = authUser.value) {
     .join('|')
 }
 
+function getCurrentBusinessOwnerId(user = authUser.value) {
+  return String(user?.workspace_owner_id || user?.workspaceOwnerId || user?.id || '').trim().toLowerCase()
+}
+
+function getCurrentBusinessOwnerEmail(user = authUser.value) {
+  return String(user?.workspace_owner_email || user?.workspaceOwnerEmail || user?.email || '').trim().toLowerCase()
+}
+
+function getCurrentBusinessOwnerRole(user = authUser.value) {
+  return String(user?.workspace_owner_role || user?.workspaceOwnerRole || user?.role || '').trim().toLowerCase()
+}
+
 const currentBusinessAccountIdentity = computed(() => getBusinessAccountIdentity())
 
 function findLegacyBusinessStorageKey(baseKey) {
@@ -8076,11 +8088,21 @@ function hasPersistedBusinessPermissionRoles() {
 
 const isPaymentHistoryOwnedByCurrentBusiness = (entry) => {
   const currentIdentity = currentBusinessAccountIdentity.value
-  if (!currentIdentity) return false
+  const currentOwnerId = getCurrentBusinessOwnerId()
+  const currentOwnerEmail = getCurrentBusinessOwnerEmail()
+  const currentOwnerRole = getCurrentBusinessOwnerRole()
+  const entryIdentity = String(entry?.accountIdentity || entry?.account_identity || '').trim().toLowerCase()
+  const entryOwnerId = String(entry?.workspaceOwnerId || entry?.workspace_owner_id || '').trim().toLowerCase()
+  const entryOwnerEmail = String(entry?.ownerEmail || entry?.owner_email || '').trim().toLowerCase()
+  const entryOwnerRole = String(entry?.workspaceOwnerRole || entry?.workspace_owner_role || '').trim().toLowerCase()
 
-  if (!entry?.accountIdentity) return true
+  if (currentIdentity && entryIdentity && entryIdentity === currentIdentity) return true
+  if (currentOwnerId && entryOwnerId && currentOwnerId === entryOwnerId) return true
+  if (currentOwnerEmail && entryOwnerEmail && currentOwnerEmail === entryOwnerEmail) {
+    return !currentOwnerRole || !entryOwnerRole || currentOwnerRole === entryOwnerRole
+  }
 
-  return entry.accountIdentity === currentIdentity
+  return false
 }
 
 const readStoredPaymentHistory = () => {
@@ -8241,16 +8263,28 @@ const startBusinessPaymentHistorySync = async () => {
 
   const localEntries = readStoredPaymentHistory()
   if (localEntries.length) {
-    paymentHistoryEntries.value = localEntries
+    const scopedLocalEntries = localEntries.map((entry) => ({
+      ...entry,
+      accountIdentity: String(entry?.accountIdentity || '').trim() || currentBusinessAccountIdentity.value,
+      ownerEmail: String(entry?.ownerEmail || '').trim() || getCurrentBusinessOwnerEmail(),
+      workspaceOwnerId: String(entry?.workspaceOwnerId || '').trim() || getCurrentBusinessOwnerId(),
+      workspaceOwnerRole: String(entry?.workspaceOwnerRole || '').trim() || getCurrentBusinessOwnerRole(),
+    }))
+
+    paymentHistoryEntries.value = scopedLocalEntries
     try {
-      await migrateBusinessPaymentHistoryEntries(localEntries)
+      await migrateBusinessPaymentHistoryEntries(scopedLocalEntries)
     } catch {
       // Keep the local fallback visible if Firestore migration fails.
     }
   }
 
   stopBusinessPaymentHistorySync = subscribeToBusinessPaymentHistory(
-    currentBusinessAccountIdentity.value,
+    {
+      accountIdentity: currentBusinessAccountIdentity.value,
+      workspaceOwnerId: getCurrentBusinessOwnerId(),
+      ownerEmail: getCurrentBusinessOwnerEmail(),
+    },
     (entries) => {
       paymentHistoryEntries.value = Array.isArray(entries) ? entries : []
       syncPaymentHistoryToStorage()

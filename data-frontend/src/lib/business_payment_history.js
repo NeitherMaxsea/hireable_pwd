@@ -14,6 +14,7 @@ export const BUSINESS_PAYMENT_HISTORY_COLLECTION = 'business_payment_history'
 const paymentHistoryCollectionRef = collection(db, BUSINESS_PAYMENT_HISTORY_COLLECTION)
 
 const text = (value) => String(value || '').trim()
+const lowerText = (value) => text(value).toLowerCase()
 
 const timestampText = (value) => {
   if (!value) return ''
@@ -42,34 +43,95 @@ export const normalizeBusinessPaymentHistoryRecord = (record = {}) => ({
   createdAt: timestampText(record.createdAt || record.created_at || record.created_at_server),
 })
 
-export const subscribeToBusinessPaymentHistory = (accountIdentity, handleNext, handleError) => {
-  const normalizedIdentity = text(accountIdentity).toLowerCase()
+const sortBusinessPaymentHistoryRecords = (records = []) =>
+  [...records].sort((left, right) => {
+    const leftTime = Date.parse(left.createdAt || '') || 0
+    const rightTime = Date.parse(right.createdAt || '') || 0
+    return rightTime - leftTime
+  })
 
-  if (!normalizedIdentity) {
+const resolveBusinessPaymentHistoryTarget = (target = '') =>
+  typeof target === 'object' && target !== null
+    ? {
+        accountIdentity: lowerText(target.accountIdentity || target.account_identity),
+        workspaceOwnerId: text(target.workspaceOwnerId || target.workspace_owner_id),
+        ownerEmail: lowerText(target.ownerEmail || target.owner_email),
+      }
+    : {
+        accountIdentity: lowerText(target),
+        workspaceOwnerId: '',
+        ownerEmail: '',
+      }
+
+export const subscribeToBusinessPaymentHistory = (target, handleNext, handleError) => {
+  const {
+    accountIdentity,
+    workspaceOwnerId,
+    ownerEmail,
+  } = resolveBusinessPaymentHistoryTarget(target)
+
+  if (!accountIdentity && !workspaceOwnerId && !ownerEmail) {
     if (typeof handleNext === 'function') handleNext([])
     return () => {}
   }
 
-  return onSnapshot(
-    query(paymentHistoryCollectionRef, where('account_identity', '==', normalizedIdentity)),
-    (snapshot) => {
-      const records = snapshot.docs
-        .map((entry) => normalizeBusinessPaymentHistoryRecord({
-          id: entry.id,
-          ...entry.data(),
-        }))
-        .sort((left, right) => {
-          const leftTime = Date.parse(left.createdAt || '') || 0
-          const rightTime = Date.parse(right.createdAt || '') || 0
-          return rightTime - leftTime
-        })
+  const snapshotBuckets = new Map()
+  const seenErrorCodes = new Set()
 
-      if (typeof handleNext === 'function') handleNext(records)
-    },
-    (error) => {
-      if (typeof handleError === 'function') handleError(error)
-    },
-  )
+  const emitMergedRecords = () => {
+    const mergedRecords = new Map()
+
+    snapshotBuckets.forEach((records) => {
+      records.forEach((record) => {
+        const recordKey = text(record.id || record.receiptCode || record.createdAt)
+        if (!recordKey) return
+        mergedRecords.set(recordKey, record)
+      })
+    })
+
+    if (typeof handleNext === 'function') {
+      handleNext(sortBusinessPaymentHistoryRecords([...mergedRecords.values()]))
+    }
+  }
+
+  const subscribeToScopedField = (bucketKey, field, value) =>
+    onSnapshot(
+      query(paymentHistoryCollectionRef, where(field, '==', value)),
+      (snapshot) => {
+        snapshotBuckets.set(
+          bucketKey,
+          snapshot.docs.map((entry) => normalizeBusinessPaymentHistoryRecord({
+            id: entry.id,
+            ...entry.data(),
+          })),
+        )
+        emitMergedRecords()
+      },
+      (error) => {
+        const errorKey = `${bucketKey}:${text(error?.code || error?.message)}`
+        if (!seenErrorCodes.has(errorKey) && typeof handleError === 'function') {
+          seenErrorCodes.add(errorKey)
+          handleError(error)
+        }
+      },
+    )
+
+  const stops = []
+  if (accountIdentity) {
+    stops.push(subscribeToScopedField('accountIdentity', 'account_identity', accountIdentity))
+  }
+  if (workspaceOwnerId) {
+    stops.push(subscribeToScopedField('workspaceOwnerId', 'workspace_owner_id', workspaceOwnerId))
+  }
+  if (ownerEmail) {
+    stops.push(subscribeToScopedField('ownerEmail', 'owner_email', ownerEmail))
+  }
+
+  return () => {
+    stops.forEach((stop) => {
+      if (typeof stop === 'function') stop()
+    })
+  }
 }
 
 export const subscribeToAllBusinessPaymentHistory = (handleNext, handleError) =>
@@ -81,13 +143,9 @@ export const subscribeToAllBusinessPaymentHistory = (handleNext, handleError) =>
           id: entry.id,
           ...entry.data(),
         }))
-        .sort((left, right) => {
-          const leftTime = Date.parse(left.createdAt || '') || 0
-          const rightTime = Date.parse(right.createdAt || '') || 0
-          return rightTime - leftTime
-        })
+      const sortedRecords = sortBusinessPaymentHistoryRecords(records)
 
-      if (typeof handleNext === 'function') handleNext(records)
+      if (typeof handleNext === 'function') handleNext(sortedRecords)
     },
     (error) => {
       if (typeof handleError === 'function') handleError(error)
@@ -117,7 +175,7 @@ export const saveBusinessPaymentHistoryEntry = async (entry = {}) => {
     receiptCode: normalizedEntry.receiptCode || documentId,
     billingNote: normalizedEntry.billingNote,
     account_identity: normalizedEntry.accountIdentity.toLowerCase(),
-    owner_email: normalizedEntry.ownerEmail,
+    owner_email: lowerText(normalizedEntry.ownerEmail),
     owner_name: normalizedEntry.ownerName,
     workspace_owner_id: normalizedEntry.workspaceOwnerId,
     workspace_owner_role: normalizedEntry.workspaceOwnerRole,
