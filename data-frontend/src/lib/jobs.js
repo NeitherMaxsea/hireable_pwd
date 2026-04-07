@@ -25,6 +25,13 @@ const normalizeEmail = (value) => text(value).toLowerCase()
 const waitForAuthReady = () =>
   typeof auth.authStateReady === 'function' ? auth.authStateReady() : Promise.resolve()
 const uniqueTextValues = (values = []) => [...new Set(values.map((value) => text(value)).filter(Boolean))]
+const hasBrowserStorage = () => {
+  try {
+    return typeof window !== 'undefined' && !!window.localStorage
+  } catch {
+    return false
+  }
+}
 const chunkValues = (values = [], size = 10) => {
   const normalizedSize = Math.max(1, Number(size) || 1)
   const chunks = []
@@ -46,6 +53,8 @@ const timestampText = (value) => {
 }
 
 const readStorage = (key, fallback) => {
+  if (!hasBrowserStorage()) return cloneJson(fallback)
+
   try {
     const raw = window.localStorage.getItem(key)
     if (!raw) return cloneJson(fallback)
@@ -57,7 +66,13 @@ const readStorage = (key, fallback) => {
 }
 
 const writeStorage = (key, value) => {
-  window.localStorage.setItem(key, JSON.stringify(value))
+  if (!hasBrowserStorage()) return
+
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value))
+  } catch {
+    // Keep public job reads working even when browser storage is blocked.
+  }
 }
 
 const normalizeTextList = (value, delimiter = /\r?\n/) => {
@@ -160,8 +175,14 @@ const getCachedJobs = () =>
 
 const cacheJobs = (jobs) => {
   writeStorage(JOBS_STORAGE_KEY, jobs)
-  if (window.localStorage.getItem(LEGACY_JOBS_STORAGE_KEY)) {
-    window.localStorage.removeItem(LEGACY_JOBS_STORAGE_KEY)
+  if (!hasBrowserStorage()) return
+
+  try {
+    if (window.localStorage.getItem(LEGACY_JOBS_STORAGE_KEY)) {
+      window.localStorage.removeItem(LEGACY_JOBS_STORAGE_KEY)
+    }
+  } catch {
+    // Ignore storage cleanup failures for the legacy cache key.
   }
 }
 
@@ -359,7 +380,6 @@ const deleteBusinessJobPostViaFunction = async (jobId, options = {}) => {
 
 export const getPublicJobs = async () => {
   try {
-    await waitForAuthReady()
     const snapshot = await getDocs(collection(db, JOBS_COLLECTION))
     const firestoreJobs = filterPublicJobs(mapSnapshotToJobs(snapshot.docs))
     cacheJobs(firestoreJobs)
@@ -389,27 +409,23 @@ export const subscribeToPublicJobs = (handleNext, handleError) => {
 
   emitCachedJobs()
 
-  void waitForAuthReady()
-    .then(() => {
-      if (isClosed) return
-
-      stopSnapshot = onSnapshot(
-        collection(db, JOBS_COLLECTION),
-        (snapshot) => {
-          const jobs = filterPublicJobs(mapSnapshotToJobs(snapshot.docs))
-          cacheJobs(jobs)
-          if (typeof handleNext === 'function') handleNext(jobs)
-        },
-        (error) => {
-          emitCachedJobs()
-          if (typeof handleError === 'function') handleError(error)
-        },
-      )
-    })
-    .catch((error) => {
-      emitCachedJobs()
-      if (typeof handleError === 'function') handleError(error)
-    })
+  try {
+    stopSnapshot = onSnapshot(
+      collection(db, JOBS_COLLECTION),
+      (snapshot) => {
+        const jobs = filterPublicJobs(mapSnapshotToJobs(snapshot.docs))
+        cacheJobs(jobs)
+        if (typeof handleNext === 'function') handleNext(jobs)
+      },
+      (error) => {
+        emitCachedJobs()
+        if (typeof handleError === 'function') handleError(error)
+      },
+    )
+  } catch (error) {
+    emitCachedJobs()
+    if (typeof handleError === 'function') handleError(error)
+  }
 
   return () => {
     isClosed = true
