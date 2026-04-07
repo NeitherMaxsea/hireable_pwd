@@ -220,6 +220,19 @@ export const createRecruitmentState = (ctx = {}) => {
     posted: formatPostedJobDateLabel(record.createdAt || record.created_at || record.updatedAt || record.updated_at, 'Posted'),
     workspaceOwnerId: String(record.workspaceOwnerId || record.workspace_owner_id || '').trim(),
   })
+  const syncPostedJobRecordLocally = (record = {}) => {
+    const nextRecord = createPostedJobRecord(record)
+    if (!nextRecord.id) return
+
+    postedJobs.value = [
+      nextRecord,
+      ...postedJobs.value.filter((job) => String(job?.id || '').trim() !== nextRecord.id),
+    ].sort((left, right) => {
+      const leftTime = Date.parse(String(left?.updatedAt || left?.createdAt || '')) || 0
+      const rightTime = Date.parse(String(right?.updatedAt || right?.createdAt || '')) || 0
+      return rightTime - leftTime
+    })
+  }
   const postedJobsSummary = computed(() => {
     const openCount = postedJobs.value.filter((job) => String(job.status || '').trim().toLowerCase() === 'open').length
     const draftCount = postedJobs.value.filter((job) => String(job.status || '').trim().toLowerCase() === 'draft').length
@@ -578,10 +591,10 @@ export const createRecruitmentState = (ctx = {}) => {
   const saveJobPost = async () => {
     if (!canEditBusinessModule('job-posting')) {
       showPaymentToast('Your role has view-only access for Job Posting.', 'warning')
-      return
+      return false
     }
 
-    if (isSavingJobPost.value) return
+    if (isSavingJobPost.value) return false
 
     const requiredFields = [
       ['job title', jobPostingDraft.value.title],
@@ -610,18 +623,18 @@ export const createRecruitmentState = (ctx = {}) => {
 
     if (missingFields.length) {
       showPaymentToast(`Please complete your ${missingFields.join(', ')}.`, 'warning')
-      return
+      return false
     }
 
     const vacancyCount = Number(jobPostingDraft.value.vacancies)
     if (!Number.isFinite(vacancyCount) || vacancyCount < 1 || vacancyCount > JOB_POSTING_MAX_VACANCIES) {
       showPaymentToast(`Vacancies must be between 1 and ${JOB_POSTING_MAX_VACANCIES}.`, 'warning')
-      return
+      return false
     }
 
     if (!parseJobPostingSalaryRange(jobPostingDraft.value.salaryRange).isValid) {
       showPaymentToast('Enter the salary as minimum - maximum, for example PHP 15,000 - PHP 20,000.', 'warning')
-      return
+      return false
     }
 
     const workspaceOwnerId = getWorkspaceOwnerDirectoryId()
@@ -636,7 +649,7 @@ export const createRecruitmentState = (ctx = {}) => {
 
     if (!workspaceOwnerId || !employerId) {
       showPaymentToast('Refresh the page and sign in again before saving this job post.', 'error')
-      return
+      return false
     }
 
     try {
@@ -670,10 +683,12 @@ export const createRecruitmentState = (ctx = {}) => {
         createdBy: employerId,
       }
 
-      if (wasEditingJobPost) {
-        await updateBusinessJobPost(editingJobPostId.value, payload)
-      } else {
-        await createBusinessJobPost(payload)
+      const savedJob = wasEditingJobPost
+        ? await updateBusinessJobPost(editingJobPostId.value, payload)
+        : await createBusinessJobPost(payload)
+
+      if (savedJob) {
+        syncPostedJobRecordLocally(savedJob)
       }
 
       resetJobPostingDraft()
@@ -684,6 +699,7 @@ export const createRecruitmentState = (ctx = {}) => {
           : 'Job post published. It now appears in Posted Jobs and the public landing page.',
         'success',
       )
+      return true
     } catch (error) {
       showPaymentToast(
         error instanceof Error
@@ -693,6 +709,7 @@ export const createRecruitmentState = (ctx = {}) => {
             : 'Unable to publish the job post right now.',
         'error',
       )
+      return false
     } finally {
       isSavingJobPost.value = false
     }
