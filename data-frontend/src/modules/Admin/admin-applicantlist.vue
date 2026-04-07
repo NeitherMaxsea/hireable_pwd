@@ -17,6 +17,10 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  newApplicantIds: {
+    type: Array,
+    default: () => [],
+  },
 })
 
 const applicantSearch = ref('')
@@ -111,6 +115,12 @@ const applicantAddress = (record) =>
     || 'Not set'
 
 const applicantRecordId = (record) => String(record?.id || '').trim()
+const newApplicantIdSet = computed(() => new Set(
+  (Array.isArray(props.newApplicantIds) ? props.newApplicantIds : [])
+    .map((value) => String(value || '').trim())
+    .filter(Boolean),
+))
+const isNewApplicant = (record) => newApplicantIdSet.value.has(applicantRecordId(record))
 
 const findApplicantById = (applicantId) =>
   (Array.isArray(props.applicants) ? props.applicants : []).find((record) => applicantRecordId(record) === applicantId) || null
@@ -886,7 +896,10 @@ const handleBulkApplicantDelete = async () => {
                   <template v-else>{{ applicantInitials(applicant) }}</template>
                 </span>
                 <span class="applicant-list-table__identity">
-                  <strong>{{ applicantDisplayName(applicant) }}</strong>
+                  <span class="applicant-list-table__identity-top">
+                    <span v-if="isNewApplicant(applicant)" class="applicant-list-table__new-badge">NEW</span>
+                    <strong>{{ applicantDisplayName(applicant) }}</strong>
+                  </span>
                   <span>{{ applicantEmail(applicant) }}</span>
                 </span>
               </div>
@@ -1021,48 +1034,55 @@ const handleBulkApplicantDelete = async () => {
           </span>
         </section>
 
-        <section class="applicant-modal__section">
-          <div class="applicant-modal__section-head">
-            <h3>Profile Information</h3>
-            <p>Applicant account details synced from Firebase.</p>
-          </div>
-
-          <div class="applicant-modal__detail-list">
-            <div v-for="detail in applicantDetailRows" :key="detail.label" class="applicant-modal__detail">
-              <span>{{ detail.label }}</span>
-              <strong>{{ detail.value }}</strong>
+        <div class="applicant-modal__content">
+          <section class="applicant-modal__section">
+            <div class="applicant-modal__section-head">
+              <h3>Profile Information</h3>
+              <p>Applicant account details synced from Firebase.</p>
             </div>
-          </div>
-        </section>
 
-        <section class="applicant-modal__section applicant-modal__verification">
-          <div class="applicant-modal__section-head">
-            <h3>Verification Files</h3>
-            <p>Click any file to open a larger preview.</p>
-          </div>
-          <div class="applicant-modal__verification-grid">
-            <article
-              v-for="asset in applicantVerificationAssets"
-              :key="asset.label"
-              class="applicant-modal__verification-card"
-            >
-              <span class="applicant-modal__verification-label">{{ asset.label }}</span>
-
-              <a
-                v-if="asset.path"
-                class="applicant-modal__verification-link"
-                href="#"
-                @click.prevent="openImagePreview(asset)"
-              >
-                <img :src="asset.path" :alt="asset.label" class="applicant-modal__verification-image" />
-              </a>
-
-              <div v-else class="applicant-modal__verification-empty">
-                Not uploaded
+            <div class="applicant-modal__detail-list">
+              <div v-for="detail in applicantDetailRows" :key="detail.label" class="applicant-modal__detail">
+                <span>{{ detail.label }}</span>
+                <strong>{{ detail.value }}</strong>
               </div>
-            </article>
-          </div>
-        </section>
+            </div>
+          </section>
+
+          <section class="applicant-modal__section applicant-modal__verification">
+            <div class="applicant-modal__section-head">
+              <h3>Verification Files</h3>
+              <p>Click any file to open a larger preview.</p>
+            </div>
+            <div class="applicant-modal__verification-grid">
+              <article
+                v-for="asset in applicantVerificationAssets"
+                :key="asset.label"
+                class="applicant-modal__verification-card"
+              >
+                <div class="applicant-modal__verification-head">
+                  <span class="applicant-modal__verification-label">{{ asset.label }}</span>
+                  <span class="applicant-modal__verification-state">
+                    {{ asset.path ? 'Uploaded' : 'Missing' }}
+                  </span>
+                </div>
+
+                <a
+                  v-if="asset.path"
+                  class="applicant-modal__verification-link"
+                  href="#"
+                  @click.prevent="openImagePreview(asset)"
+                >
+                  <img :src="asset.path" :alt="asset.label" class="applicant-modal__verification-image" />
+                </a>
+
+                <div v-else class="applicant-modal__verification-empty">
+                  Not uploaded
+                </div>
+              </article>
+            </div>
+          </section>
+        </div>
       </div>
 
       <div v-else-if="activeModal === 'approve'" class="applicant-modal__panel applicant-modal__panel--approve">
@@ -1695,6 +1715,13 @@ const handleBulkApplicantDelete = async () => {
   min-width: 0;
 }
 
+.applicant-list-table__identity-top {
+  display: flex;
+  align-items: center;
+  gap: 0.42rem;
+  min-width: 0;
+}
+
 .applicant-list-table__identity strong {
   color: #1f3a2d;
   font-size: 0.88rem;
@@ -1706,6 +1733,22 @@ const handleBulkApplicantDelete = async () => {
   font-size: 0.76rem;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.applicant-list-table__new-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.3rem;
+  padding: 0 0.45rem;
+  border-radius: 999px;
+  background: rgba(34, 197, 94, 0.14);
+  color: #18794e;
+  font-size: 0.63rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .applicant-status-pill {
@@ -1838,7 +1881,13 @@ const handleBulkApplicantDelete = async () => {
 
 .applicant-modal__details {
   display: grid;
-  gap: 1.25rem;
+  gap: 1rem;
+}
+
+.applicant-modal__content {
+  display: grid;
+  gap: 1rem;
+  padding: 0 0.15rem;
 }
 
 .applicant-modal__hero {
@@ -1846,14 +1895,11 @@ const handleBulkApplicantDelete = async () => {
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 1rem;
-  padding: 1.2rem 1.25rem;
-  border: 1px solid rgba(122, 179, 145, 0.16);
+  padding: 0 0 1rem;
+  border-bottom: 1px solid rgba(122, 179, 145, 0.2);
   background:
-    radial-gradient(circle at top left, rgba(95, 178, 129, 0.18), transparent 34%),
-    linear-gradient(180deg, rgba(252, 255, 253, 0.98) 0%, rgba(244, 250, 246, 0.95) 100%);
-  box-shadow:
-    0 14px 30px rgba(44, 138, 98, 0.07),
-    inset 0 1px 0 rgba(255, 255, 255, 0.86);
+    radial-gradient(circle at top left, rgba(95, 178, 129, 0.08), transparent 34%),
+    linear-gradient(180deg, rgba(252, 255, 253, 0.82) 0%, rgba(244, 250, 246, 0.56) 100%);
 }
 
 .applicant-modal__hero-avatar {
@@ -1887,7 +1933,7 @@ const handleBulkApplicantDelete = async () => {
 
 .applicant-modal__hero-copy strong {
   color: #1f362a;
-  font-size: 1.12rem;
+  font-size: 1.08rem;
   font-weight: 800;
   letter-spacing: -0.03em;
 }
@@ -1895,6 +1941,7 @@ const handleBulkApplicantDelete = async () => {
 .applicant-modal__hero-copy span {
   color: #6f8b79;
   font-size: 0.84rem;
+  font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1906,36 +1953,40 @@ const handleBulkApplicantDelete = async () => {
 
 .applicant-modal__section {
   display: grid;
-  gap: 0.9rem;
-  padding: 1rem 1.05rem 1.05rem;
-  border: 1px solid rgba(122, 179, 145, 0.12);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 252, 249, 0.95) 100%);
+  gap: 1rem;
+  padding: 0;
+  border: 0;
+  border-top: 1px solid rgba(122, 179, 145, 0.16);
+  background: transparent;
+  padding-top: 1rem;
 }
 
 .applicant-modal__section-head {
   display: grid;
-  gap: 0.18rem;
+  gap: 0.25rem;
 }
 
 .applicant-modal__section-head h3 {
   margin: 0;
   color: #244132;
-  font-size: 0.95rem;
+  font-size: 0.92rem;
   font-weight: 800;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.03em;
+  text-transform: none;
 }
 
 .applicant-modal__section-head p {
   margin: 0;
   color: #7a9383;
-  font-size: 0.78rem;
+  font-size: 0.79rem;
+  font-weight: 500;
   line-height: 1.5;
 }
 
 .applicant-modal__detail-list {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.8rem 1rem;
+  grid-template-columns: 1fr;
+  gap: 0;
 }
 
 .applicant-modal__form {
@@ -1972,14 +2023,14 @@ const handleBulkApplicantDelete = async () => {
 }
 
 .applicant-modal__detail {
-  min-height: 4.75rem;
-  padding: 0.85rem 0.95rem 0.9rem;
-  border: 1px solid rgba(122, 179, 145, 0.1);
-  background: rgba(255, 255, 255, 0.88);
+  grid-template-columns: minmax(8.5rem, 10rem) minmax(0, 1fr);
+  align-items: start;
+  min-height: unset;
+  padding: 0.82rem 0;
+  border-bottom: 1px solid rgba(122, 179, 145, 0.12);
   display: grid;
-  align-content: start;
-  gap: 0.35rem;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  gap: 0.9rem;
+  min-width: 0;
 }
 
 .applicant-modal__detail span,
@@ -1987,18 +2038,23 @@ const handleBulkApplicantDelete = async () => {
   color: #6b8574;
   font-size: 0.75rem;
   font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0.01em;
+  line-height: 1.5;
 }
 
 .applicant-modal__detail strong {
   color: #1f362a;
-  font-size: 0.95rem;
+  font-size: 0.92rem;
   line-height: 1.55;
   font-weight: 700;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .applicant-modal__verification {
   display: grid;
-  gap: 0.9rem;
+  gap: 1rem;
 }
 
 .applicant-modal__verification-grid {
@@ -2009,22 +2065,40 @@ const handleBulkApplicantDelete = async () => {
 
 .applicant-modal__verification-card {
   display: grid;
-  gap: 0.55rem;
+  gap: 0.7rem;
   min-width: 0;
+  padding: 0.9rem 0 0;
+  border-top: 1px solid rgba(122, 179, 145, 0.12);
+}
+
+.applicant-modal__verification-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
 }
 
 .applicant-modal__verification-label {
-  color: #6b8574;
+  color: #244132;
   font-size: 0.75rem;
   font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.applicant-modal__verification-state {
+  color: #6f8b79;
+  font-size: 0.72rem;
+  font-weight: 600;
 }
 
 .applicant-modal__verification-link {
   display: grid;
   place-items: center;
   border: 1px solid rgba(122, 179, 145, 0.12);
-  border-radius: 0.85rem;
-  background: #fff;
+  border-radius: 0.65rem;
+  background: rgba(255, 255, 255, 0.92);
   text-decoration: none;
   overflow: hidden;
   cursor: zoom-in;
@@ -2040,18 +2114,20 @@ const handleBulkApplicantDelete = async () => {
 .applicant-modal__verification-image {
   display: block;
   width: 100%;
-  height: 12.5rem;
+  height: 11.75rem;
   object-fit: contain;
   object-position: center;
   background: #f6f8f7;
 }
 
 .applicant-modal__verification-empty {
-  min-height: 12.5rem;
+  min-height: 11.75rem;
   border: 1px solid rgba(122, 179, 145, 0.14);
+  border-radius: 0.65rem;
   background: linear-gradient(180deg, #fbfdfb 0%, #f4f8f5 100%);
   color: #6e8578;
   font-size: 0.82rem;
+  font-weight: 700;
   display: grid;
   place-items: center;
 }
@@ -2063,7 +2139,7 @@ const handleBulkApplicantDelete = async () => {
   display: grid;
   place-items: center;
   padding: 2rem 5.5rem 2rem 2rem;
-  background: rgba(16, 24, 20, 0.78);
+  background: var(--admin-bg-overlay, rgba(16, 24, 20, 0.78));
   backdrop-filter: blur(4px);
 }
 
@@ -2088,10 +2164,10 @@ const handleBulkApplicantDelete = async () => {
   right: 1.4rem;
   width: 2.85rem;
   height: 2.85rem;
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  border: 1px solid var(--admin-border-color, rgba(255, 255, 255, 0.3));
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
+  background: var(--admin-bg-surface-elevated, rgba(255, 255, 255, 0.12));
+  color: var(--admin-text-primary, #fff);
   font: inherit;
   display: grid;
   place-items: center;
@@ -2104,7 +2180,7 @@ const handleBulkApplicantDelete = async () => {
 }
 
 .applicant-image-viewer__close:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--admin-bg-hover, rgba(255, 255, 255, 0.2));
   transform: translateY(-2px);
 }
 
@@ -2291,7 +2367,7 @@ const handleBulkApplicantDelete = async () => {
   display: grid;
   place-items: center;
   overflow: hidden;
-  background: rgba(10, 28, 19, 0.48);
+  background: var(--admin-bg-overlay, rgba(10, 28, 19, 0.48));
   backdrop-filter: blur(10px);
 }
 
@@ -2334,11 +2410,9 @@ const handleBulkApplicantDelete = async () => {
   min-width: min(28rem, calc(100vw - 2rem));
   padding: 1.5rem 1.6rem;
   border-radius: 1.4rem;
-  border: 1px solid rgba(201, 236, 215, 0.55);
-  background: rgba(251, 255, 253, 0.94);
-  box-shadow:
-    0 28px 80px rgba(5, 34, 19, 0.22),
-    inset 0 1px 0 rgba(255, 255, 255, 0.82);
+  border: 1px solid var(--admin-border-color, rgba(201, 236, 215, 0.55));
+  background: var(--admin-bg-surface-elevated, rgba(251, 255, 253, 0.94));
+  box-shadow: var(--admin-shadow-strong, 0 28px 80px rgba(5, 34, 19, 0.22));
   display: grid;
   justify-items: center;
   gap: 0.55rem;
@@ -2346,14 +2420,14 @@ const handleBulkApplicantDelete = async () => {
 }
 
 .applicant-approval-overlay__card strong {
-  color: #1e382a;
+  color: var(--admin-text-primary, #1e382a);
   font-size: 1.08rem;
   font-weight: 800;
 }
 
 .applicant-approval-overlay__card p {
   margin: 0;
-  color: #5a7567;
+  color: var(--admin-text-secondary, #5a7567);
   font-size: 0.88rem;
 }
 
@@ -2427,6 +2501,10 @@ const handleBulkApplicantDelete = async () => {
     justify-items: start;
   }
 
+  .applicant-modal__hero-status {
+    justify-self: start;
+  }
+
   .applicant-image-viewer {
     padding: 1rem 1rem 4.75rem;
   }
@@ -2443,6 +2521,11 @@ const handleBulkApplicantDelete = async () => {
   .applicant-modal__detail-list,
   .applicant-modal__verification-grid {
     grid-template-columns: 1fr;
+  }
+
+  .applicant-modal__detail {
+    grid-template-columns: 1fr;
+    gap: 0.3rem;
   }
 }
 

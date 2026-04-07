@@ -16,13 +16,25 @@ defineProps({
     type: Array,
     default: () => [],
   },
+  userManagementBadge: {
+    type: String,
+    default: '',
+  },
   paymentManagementItems: {
     type: Array,
     default: () => [],
   },
+  paymentManagementBadge: {
+    type: String,
+    default: '',
+  },
   jobManagementItems: {
     type: Array,
     default: () => [],
+  },
+  jobManagementBadge: {
+    type: String,
+    default: '',
   },
   storageManagementItems: {
     type: Array,
@@ -105,6 +117,7 @@ defineEmits([
           <i :class="item.icon" aria-hidden="true" />
           <span>{{ item.label }}</span>
         </span>
+        <span v-if="item.badge" class="admin-nav-button__badge">{{ item.badge }}</span>
       </button>
 
       <div class="admin-dropdown-group">
@@ -119,8 +132,11 @@ defineEmits([
             <i class="bi bi-people-fill" aria-hidden="true" />
             <span>User Management</span>
           </span>
-          <span class="admin-nav-button__chevron" :class="{ 'is-open': userManagementOpen }">
-            <i class="bi bi-chevron-down" aria-hidden="true" />
+          <span class="admin-nav-button__right">
+            <span v-if="userManagementBadge" class="admin-nav-button__badge">{{ userManagementBadge }}</span>
+            <span class="admin-nav-button__chevron" :class="{ 'is-open': userManagementOpen }">
+              <i class="bi bi-chevron-down" aria-hidden="true" />
+            </span>
           </span>
         </button>
 
@@ -138,6 +154,7 @@ defineEmits([
                 <i :class="item.icon" aria-hidden="true" />
                 <span>{{ item.label }}</span>
               </span>
+              <span v-if="item.badge" class="admin-nav-button__badge">{{ item.badge }}</span>
             </button>
           </div>
         </Transition>
@@ -155,8 +172,11 @@ defineEmits([
             <i class="bi bi-wallet2" aria-hidden="true" />
             <span>Subscription Management</span>
           </span>
-          <span class="admin-nav-button__chevron" :class="{ 'is-open': paymentManagementOpen }">
-            <i class="bi bi-chevron-down" aria-hidden="true" />
+          <span class="admin-nav-button__right">
+            <span v-if="paymentManagementBadge" class="admin-nav-button__badge">{{ paymentManagementBadge }}</span>
+            <span class="admin-nav-button__chevron" :class="{ 'is-open': paymentManagementOpen }">
+              <i class="bi bi-chevron-down" aria-hidden="true" />
+            </span>
           </span>
         </button>
 
@@ -174,6 +194,7 @@ defineEmits([
                 <i :class="item.icon" aria-hidden="true" />
                 <span>{{ item.label }}</span>
               </span>
+              <span v-if="item.badge" class="admin-nav-button__badge">{{ item.badge }}</span>
             </button>
           </div>
         </Transition>
@@ -191,8 +212,11 @@ defineEmits([
             <i class="bi bi-briefcase-fill" aria-hidden="true" />
             <span>Job Management</span>
           </span>
-          <span class="admin-nav-button__chevron" :class="{ 'is-open': jobManagementOpen }">
-            <i class="bi bi-chevron-down" aria-hidden="true" />
+          <span class="admin-nav-button__right">
+            <span v-if="jobManagementBadge" class="admin-nav-button__badge">{{ jobManagementBadge }}</span>
+            <span class="admin-nav-button__chevron" :class="{ 'is-open': jobManagementOpen }">
+              <i class="bi bi-chevron-down" aria-hidden="true" />
+            </span>
           </span>
         </button>
 
@@ -210,6 +234,7 @@ defineEmits([
                 <i :class="item.icon" aria-hidden="true" />
                 <span>{{ item.label }}</span>
               </span>
+              <span v-if="item.badge" class="admin-nav-button__badge">{{ item.badge }}</span>
             </button>
           </div>
         </Transition>
@@ -250,6 +275,7 @@ defineEmits([
           </div>
         </Transition>
       </div>
+
     </nav>
 
     <div class="admin-sidebar__spacer" />
@@ -269,6 +295,7 @@ defineEmits([
             <i :class="item.icon" aria-hidden="true" />
             <span>{{ item.label }}</span>
           </span>
+          <span v-if="item.badge" class="admin-nav-button__badge">{{ item.badge }}</span>
         </button>
       </div>
     </div>
@@ -292,11 +319,11 @@ defineEmits([
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 0.68rem;
-  padding: 0.92rem 0.62rem 0.68rem;
-  background: linear-gradient(180deg, #ffffff 0%, #f7f9fc 100%);
-  border-right: 1px solid rgba(218, 224, 233, 0.9);
-  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.9);
+  gap: 0.5rem;
+  padding: 0.74rem 0.54rem 0.5rem;
+  background: linear-gradient(180deg, var(--admin-bg-surface) 0%, var(--admin-bg-surface-muted) 100%);
+  border-right: 1px solid var(--admin-border-color);
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.08);
   backdrop-filter: blur(10px);
   transition: padding 0.22s ease, gap 0.22s ease;
 }
@@ -305,20 +332,20 @@ defineEmits([
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.7rem;
-  padding: 0.1rem 0.2rem 0.2rem;
+  gap: 0.56rem;
+  padding: 0.04rem 0.12rem 0.1rem;
 }
 
 .admin-brand {
   display: inline-flex;
   align-items: center;
-  gap: 0.9rem;
+  gap: 0.68rem;
   min-width: 0;
 }
 
 .admin-brand__mark {
-  width: 3.2rem;
-  height: 3.2rem;
+  width: 2.72rem;
+  height: 2.72rem;
   display: grid;
   place-items: center;
 }
@@ -332,32 +359,32 @@ defineEmits([
 .admin-brand__copy {
   min-width: 0;
   display: grid;
-  gap: 0.14rem;
+  gap: 0.08rem;
 }
 
 .admin-brand__wordmark {
   width: auto;
-  height: 1.45rem;
+  height: 1.22rem;
   object-fit: contain;
   object-position: left center;
 }
 
 .admin-brand__subtext {
-  color: #7f8898;
-  font-size: 0.74rem;
+  color: var(--admin-text-secondary);
+  font-size: 0.68rem;
   font-weight: 600;
 }
 
 .admin-link-group {
   display: grid;
-  gap: 0.22rem;
-  padding: 0.08rem 0;
+  gap: 0.14rem;
+  padding: 0.04rem 0;
 }
 
 .admin-section-label {
-  padding: 0.08rem 0.5rem 0.2rem;
-  color: #8a94a6;
-  font-size: 0.68rem;
+  padding: 0.04rem 0.4rem 0.12rem;
+  color: var(--admin-text-secondary);
+  font-size: 0.62rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -368,19 +395,19 @@ defineEmits([
 }
 
 .admin-nav-button {
-  min-height: 2.28rem;
+  min-height: 1.96rem;
   width: 100%;
   box-sizing: border-box;
   border: 1px solid transparent;
-  border-radius: 0.9rem;
-  padding: 0.56rem 0.66rem;
+  border-radius: 0.76rem;
+  padding: 0.42rem 0.54rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.58rem;
+  gap: 0.42rem;
   background: transparent;
-  color: #374151;
-  font-size: 0.87rem;
+  color: var(--admin-text-primary);
+  font-size: 0.79rem;
   font-weight: 600;
   letter-spacing: -0.01em;
   cursor: pointer;
@@ -393,47 +420,47 @@ defineEmits([
 }
 
 .admin-nav-button:hover {
-  background: rgba(241, 245, 249, 0.96);
+  background: var(--admin-bg-hover);
   box-shadow: none;
   transform: translateX(2px);
 }
 
 .admin-nav-button.is-active {
-  border-color: rgba(88, 167, 126, 0.2);
-  background: linear-gradient(135deg, rgba(233, 246, 238, 0.98) 0%, rgba(245, 252, 248, 0.98) 100%);
-  box-shadow: 0 8px 18px rgba(62, 125, 88, 0.08);
-  color: #2f6a49;
+  border-color: var(--admin-theme-accent-border);
+  background: linear-gradient(135deg, var(--admin-theme-accent-soft) 0%, var(--admin-bg-surface) 100%);
+  box-shadow: var(--admin-shadow-soft);
+  color: var(--admin-theme-accent);
   transform: translateX(0);
 }
 
 .admin-nav-button.is-active .admin-nav-button__left i,
 .admin-nav-button.is-active .admin-nav-button__left span {
-  color: #2f6a49;
+  color: var(--admin-theme-accent);
 }
 
 .admin-nav-button.is-active-soft {
-  background: rgba(245, 247, 250, 0.96);
-  color: #2d3748;
+  background: var(--admin-bg-hover);
+  color: var(--admin-text-primary);
 }
 
 .admin-nav-button.is-active-soft .admin-nav-button__left i,
 .admin-nav-button.is-active-soft .admin-nav-button__left span,
 .admin-nav-button.is-active-soft .admin-nav-button__chevron {
-  color: #2d3748;
+  color: var(--admin-text-primary);
 }
 
 .admin-nav-button--dropdown {
   width: 100%;
-  padding-left: 0.62rem;
-  padding-right: 0.58rem;
-  font-size: 0.82rem;
+  padding-left: 0.54rem;
+  padding-right: 0.52rem;
+  font-size: 0.77rem;
 }
 
 .admin-nav-button__left {
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 0.56rem;
+  gap: 0.46rem;
   min-width: 0;
   flex: 1;
   text-align: left;
@@ -442,7 +469,7 @@ defineEmits([
 .admin-nav-button__left span {
   min-width: 0;
   flex: 1 1 auto;
-  line-height: 1.2;
+  line-height: 1.12;
   text-align: left;
   white-space: nowrap;
   overflow: hidden;
@@ -450,8 +477,30 @@ defineEmits([
 }
 
 .admin-nav-button__left i {
-  font-size: 0.88rem;
-  color: #6b7280;
+  font-size: 0.8rem;
+  color: var(--admin-text-secondary);
+  flex: 0 0 auto;
+}
+
+.admin-nav-button__right {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 0 0 auto;
+}
+
+.admin-nav-button__badge {
+  min-width: 1.4rem;
+  padding: 0.14rem 0.42rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--admin-theme-accent) 14%, transparent);
+  color: var(--admin-theme-accent);
+  border: 1px solid color-mix(in srgb, var(--admin-theme-accent) 24%, transparent);
+  font-size: 0.66rem;
+  font-weight: 700;
+  line-height: 1.1;
+  text-align: center;
+  white-space: nowrap;
   flex: 0 0 auto;
 }
 
@@ -459,8 +508,8 @@ defineEmits([
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.78rem;
-  color: #9aa3b2;
+  font-size: 0.7rem;
+  color: var(--admin-text-secondary);
   flex: 0 0 auto;
   transition: transform 0.2s ease;
 }
@@ -471,34 +520,45 @@ defineEmits([
 
 .admin-dropdown-group {
   display: grid;
-  gap: 0.14rem;
+  gap: 0.1rem;
   width: 100%;
 }
 
 .admin-submenu {
+  position: relative;
   display: grid;
-  gap: 0.12rem;
-  padding-top: 0.08rem;
-  padding-left: 0;
-  margin-left: 0;
-  border-left: 0;
+  gap: 0.08rem;
+  margin-left: 0.68rem;
+  padding: 0.08rem 0 0.12rem 1.15rem;
   transform-origin: top;
   overflow: hidden;
 }
 
+.admin-submenu::before {
+  content: '';
+  position: absolute;
+  left: 0.36rem;
+  top: 0.28rem;
+  bottom: 0.42rem;
+  width: 1.5px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, transparent 0%, var(--admin-border-strong) 18%, var(--admin-border-color) 82%, transparent 100%);
+}
+
 .admin-submenu__item {
-  min-height: 2.08rem;
+  position: relative;
+  min-height: 1.78rem;
   width: 100%;
   box-sizing: border-box;
   border: 0;
-  border-radius: 0.76rem;
-  padding: 0.48rem 0.62rem 0.48rem 1.6rem;
+  border-radius: 0.68rem;
+  padding: 0.36rem 0.54rem 0.36rem 0.92rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
   background: transparent;
-  color: #4b5563;
-  font-size: 0.83rem;
+  color: var(--admin-text-primary);
+  font-size: 0.76rem;
   font-weight: 600;
   letter-spacing: -0.01em;
   cursor: pointer;
@@ -511,66 +571,66 @@ defineEmits([
 }
 
 .admin-submenu__item:hover {
-  background: rgba(241, 245, 249, 0.96);
-  color: #1f2937;
+  background: var(--admin-bg-hover);
+  color: var(--admin-text-primary);
   transform: translateX(2px);
   box-shadow: none;
 }
 
 .admin-submenu__item.is-active {
-  background: linear-gradient(135deg, rgba(233, 246, 238, 0.98) 0%, rgba(245, 252, 248, 0.98) 100%);
-  color: #2f6a49;
+  background: linear-gradient(135deg, var(--admin-theme-accent-soft) 0%, var(--admin-bg-surface) 100%);
+  color: var(--admin-theme-accent);
   box-shadow: none;
 }
 
 .admin-submenu__item.is-active .admin-nav-button__left i,
 .admin-submenu__item.is-active .admin-nav-button__left span {
-  color: #2f6a49;
+  color: var(--admin-theme-accent);
 }
 
 .admin-submenu__item .admin-nav-button__left i {
-  font-size: 0.82rem;
+  font-size: 0.76rem;
 }
 
 .admin-submenu__item:hover .admin-nav-button__left i,
 .admin-submenu__item:hover .admin-nav-button__left span {
-  color: #273246;
+  color: var(--admin-text-primary);
 }
 
 .admin-sidebar__spacer {
   flex: 1 1 auto;
-  min-height: 1.25rem;
+  min-height: 0.32rem;
 }
 
 .admin-sidebar__secondary {
   display: grid;
-  gap: 0.16rem;
+  gap: 0.12rem;
 }
 
 .admin-link-group--secondary {
-  gap: 0.18rem;
+  gap: 0.12rem;
 }
 
 .admin-nav-button--secondary {
-  min-height: 2.18rem;
+  min-height: 1.92rem;
 }
 
 .admin-sidebar-profile {
   display: flex;
   align-items: center;
-  gap: 0.58rem;
+  gap: 0.48rem;
   margin-top: 0;
-  padding: 0.8rem 0.5rem 0.12rem;
-  border-top: 1px solid rgba(223, 227, 234, 0.92);
+  padding: 0.58rem 0.4rem 0.08rem;
+  border-top: 1px solid var(--admin-border-color);
 }
 
 .admin-sidebar-profile__avatar {
-  width: 2.2rem;
-  height: 2.2rem;
-  min-width: 2.2rem;
-  min-height: 2.2rem;
+  width: 1.92rem;
+  height: 1.92rem;
+  min-width: 1.92rem;
+  min-height: 1.92rem;
   aspect-ratio: 1 / 1;
-  border-radius: 0.9rem;
+  border-radius: 0.72rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -578,7 +638,7 @@ defineEmits([
   overflow: hidden;
   background: linear-gradient(135deg, #2d3952 0%, #5a74b0 100%);
   color: #fff;
-  font-size: 0.84rem;
+  font-size: 0.76rem;
   font-weight: 700;
   line-height: 1;
   box-shadow: 0 12px 22px rgba(45, 57, 82, 0.18);
@@ -587,19 +647,19 @@ defineEmits([
 .admin-sidebar-profile__meta {
   min-width: 0;
   display: grid;
-  gap: 0.12rem;
+  gap: 0.08rem;
 }
 
 .admin-sidebar-profile__meta strong {
-  color: #214133;
-  font-size: 0.82rem;
+  color: var(--admin-text-primary);
+  font-size: 0.76rem;
   font-weight: 700;
   letter-spacing: -0.02em;
 }
 
 .admin-sidebar-profile__meta span {
-  color: #759081;
-  font-size: 0.7rem;
+  color: var(--admin-text-secondary);
+  font-size: 0.66rem;
   font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
@@ -627,7 +687,7 @@ defineEmits([
 
 @media (max-width: 1120px) {
   .admin-sidebar {
-    padding-inline: 0.56rem;
+    padding-inline: 0.5rem;
   }
 }
 
@@ -643,8 +703,8 @@ defineEmits([
 
 @media (max-width: 768px) {
   .admin-sidebar {
-    gap: 0.6rem;
-    padding: 0.84rem 0.56rem 0.62rem;
+    gap: 0.44rem;
+    padding: 0.72rem 0.5rem 0.54rem;
   }
 
   .admin-brand-row {
@@ -652,7 +712,7 @@ defineEmits([
   }
 
   .admin-brand {
-    gap: 0.74rem;
+    gap: 0.58rem;
   }
 
   .admin-brand__subtext {
@@ -661,15 +721,15 @@ defineEmits([
 
   .admin-nav-button,
   .admin-submenu__item {
-    min-height: 2.18rem;
-    font-size: 0.84rem;
+    min-height: 1.9rem;
+    font-size: 0.78rem;
   }
 }
 
 @media (max-width: 640px) {
   .admin-sidebar {
-    gap: 0.56rem;
-    padding: 0.82rem 0.58rem 0.62rem;
+    gap: 0.4rem;
+    padding: 0.68rem 0.5rem 0.5rem;
   }
 
   .admin-brand-row {
@@ -678,25 +738,25 @@ defineEmits([
   }
 
   .admin-brand {
-    gap: 0.62rem;
+    gap: 0.54rem;
   }
 
   .admin-brand__mark {
-    width: 2.55rem;
-    height: 2.55rem;
+    width: 2.34rem;
+    height: 2.34rem;
   }
 
   .admin-brand__wordmark {
-    height: 1.18rem;
+    height: 1.08rem;
   }
 
   .admin-brand__subtext {
-    font-size: 0.68rem;
+    font-size: 0.64rem;
   }
 
   .admin-nav-button,
   .admin-submenu__item {
-    min-height: 2.2rem;
+    min-height: 1.84rem;
   }
 }
 </style>

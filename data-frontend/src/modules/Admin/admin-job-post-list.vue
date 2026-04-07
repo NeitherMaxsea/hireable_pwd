@@ -11,6 +11,10 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  newJobIds: {
+    type: Array,
+    default: () => [],
+  },
   mode: {
     type: String,
     default: 'all',
@@ -30,6 +34,12 @@ const TEST_JOB_KEYWORDS = ['test', 'sample', 'demo', 'mock']
 
 const normalizeText = (value) => String(value || '').trim()
 const normalizeStatusValue = (value) => normalizeText(value).toLowerCase()
+const newJobIdSet = computed(() => new Set(
+  (Array.isArray(props.newJobIds) ? props.newJobIds : [])
+    .map((value) => normalizeText(value))
+    .filter(Boolean),
+))
+const isNewJob = (job) => newJobIdSet.value.has(normalizeText(job?.id))
 
 const titleCaseText = (value, fallback = 'Not set') => {
   const text = normalizeText(value)
@@ -322,8 +332,17 @@ onBeforeUnmount(() => {
         {{ actionNotice.message }}
       </div>
 
-      <div v-if="filteredJobRows.length" class="admin-job-posts__table-shell">
+    <div v-if="filteredJobRows.length" class="admin-job-posts__table-shell">
         <table class="admin-job-posts__table">
+          <colgroup>
+            <col class="admin-job-posts__col admin-job-posts__col--job">
+            <col class="admin-job-posts__col admin-job-posts__col--company">
+            <col class="admin-job-posts__col admin-job-posts__col--status">
+            <col class="admin-job-posts__col admin-job-posts__col--vacancies">
+            <col class="admin-job-posts__col admin-job-posts__col--salary">
+            <col class="admin-job-posts__col admin-job-posts__col--updated">
+            <col class="admin-job-posts__col admin-job-posts__col--actions">
+          </colgroup>
           <thead>
             <tr>
               <th>Job Post</th>
@@ -336,12 +355,17 @@ onBeforeUnmount(() => {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="job in filteredJobRows" :key="job.id || `${job.title}-${job.companyName}`">
-              <td>
+            <tr
+              v-for="job in filteredJobRows"
+              :key="job.id || `${job.title}-${job.companyName}`"
+              class="admin-job-posts__row"
+            >
+              <td data-label="Job Post">
                 <div class="admin-job-posts__job">
                   <strong>{{ job.title }}</strong>
                   <span>{{ job.id || 'No job ID' }}</span>
                   <div class="admin-job-posts__meta">
+                    <span v-if="isNewJob(job)" class="admin-job-posts__badge admin-job-posts__badge--new">NEW</span>
                     <span>{{ job.category }}</span>
                     <span>{{ job.location }}</span>
                     <span>{{ job.setup }}</span>
@@ -349,26 +373,30 @@ onBeforeUnmount(() => {
                   </div>
                 </div>
               </td>
-              <td>
+              <td data-label="Company">
                 <div class="admin-job-posts__company">
                   <strong>{{ job.companyName }}</strong>
                   <span>{{ job.workspaceOwnerId || 'No workspace owner ID' }}</span>
                 </div>
               </td>
-              <td>
+              <td class="admin-job-posts__cell admin-job-posts__cell--status" data-label="Status">
                 <span class="admin-job-posts__status" :class="`is-${job.status}`">
                   {{ job.statusLabel }}
                 </span>
               </td>
-              <td>{{ job.vacancies }}</td>
-              <td>{{ job.salary }}</td>
-              <td>
+              <td class="admin-job-posts__cell admin-job-posts__cell--metric" data-label="Vacancies">
+                <span class="admin-job-posts__metric">{{ job.vacancies }}</span>
+              </td>
+              <td class="admin-job-posts__cell admin-job-posts__cell--metric" data-label="Salary">
+                <span class="admin-job-posts__metric">{{ job.salary }}</span>
+              </td>
+              <td class="admin-job-posts__cell admin-job-posts__cell--dates" data-label="Updated">
                 <div class="admin-job-posts__dates">
                   <strong>{{ formatDate(job.updatedAt) }}</strong>
                   <span>Posted {{ formatDate(job.postedAt) }}</span>
                 </div>
               </td>
-              <td>
+              <td class="admin-job-posts__cell admin-job-posts__cell--actions" data-label="Actions">
                 <div class="admin-job-posts__actions">
                   <button
                     type="button"
@@ -426,6 +454,7 @@ onBeforeUnmount(() => {
             <p>{{ selectedJob.companyName }}</p>
           </div>
           <div class="admin-job-posts__modal-badges">
+            <span v-if="isNewJob(selectedJob)" class="admin-job-posts__badge admin-job-posts__badge--new">NEW</span>
             <span class="admin-job-posts__status" :class="`is-${selectedJob.status}`">
               {{ selectedJob.statusLabel }}
             </span>
@@ -522,19 +551,20 @@ onBeforeUnmount(() => {
   display: grid;
   gap: 0.2rem;
   padding: 1rem 1.05rem;
-  border: 1px solid rgba(122, 179, 145, 0.14);
+  border: 1px solid var(--admin-border-color, rgba(122, 179, 145, 0.14));
   border-radius: 1rem;
-  background: linear-gradient(180deg, #ffffff 0%, #f7fbf8 100%);
+  background: linear-gradient(180deg, var(--admin-bg-surface, #ffffff) 0%, var(--admin-bg-surface-muted, #f7fbf8) 100%);
+  box-shadow: var(--admin-shadow-soft, 0 12px 24px rgba(15, 23, 42, 0.06));
 }
 
 .admin-job-posts__summary-card span {
-  color: #6b8574;
+  color: var(--admin-text-secondary, #6b8574);
   font-size: 0.75rem;
   font-weight: 600;
 }
 
 .admin-job-posts__summary-card strong {
-  color: #214133;
+  color: var(--admin-text-primary, #214133);
   font-size: 1.35rem;
   font-weight: 600;
 }
@@ -553,7 +583,7 @@ onBeforeUnmount(() => {
 
 .admin-job-posts__search span,
 .admin-job-posts__filter span {
-  color: #5c7b69;
+  color: var(--admin-text-secondary, #5c7b69);
   font-size: 0.76rem;
   font-weight: 600;
 }
@@ -561,10 +591,10 @@ onBeforeUnmount(() => {
 .admin-job-posts__search-field,
 .admin-job-posts__filter select {
   min-height: 2.8rem;
-  border: 1px solid rgba(122, 179, 145, 0.18);
+  border: 1px solid var(--admin-border-color, rgba(122, 179, 145, 0.18));
   border-radius: 0.9rem;
-  background: #ffffff;
-  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.05);
+  background: var(--admin-bg-surface, #ffffff);
+  box-shadow: var(--admin-shadow-soft, 0 10px 22px rgba(15, 23, 42, 0.05));
 }
 
 .admin-job-posts__search-field {
@@ -575,7 +605,7 @@ onBeforeUnmount(() => {
 }
 
 .admin-job-posts__search-field i {
-  color: #7b8f83;
+  color: var(--admin-text-muted, #7b8f83);
 }
 
 .admin-job-posts__search-field input,
@@ -584,8 +614,12 @@ onBeforeUnmount(() => {
   border: 0;
   outline: none;
   background: transparent;
-  color: #274234;
+  color: var(--admin-input-text, #274234);
   font: inherit;
+}
+
+.admin-job-posts__search-field input::placeholder {
+  color: var(--admin-input-placeholder, #7b8f83);
 }
 
 .admin-job-posts__filter select {
@@ -597,10 +631,10 @@ onBeforeUnmount(() => {
   display: grid;
   gap: 0.9rem;
   padding: 1.1rem;
-  border: 1px solid rgba(125, 182, 148, 0.16);
+  border: 1px solid var(--admin-border-color, rgba(125, 182, 148, 0.16));
   border-radius: 1.15rem;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 18px 38px rgba(31, 74, 51, 0.08);
+  background: var(--admin-bg-surface-elevated, rgba(255, 255, 255, 0.96));
+  box-shadow: var(--admin-shadow-soft, 0 18px 38px rgba(31, 74, 51, 0.08));
 }
 
 .admin-job-posts__head {
@@ -612,14 +646,14 @@ onBeforeUnmount(() => {
 
 .admin-job-posts__head h2 {
   margin: 0;
-  color: #214133;
+  color: var(--admin-text-primary, #214133);
   font-size: 1.15rem;
   font-weight: 600;
 }
 
 .admin-job-posts__head p {
   margin: 0.2rem 0 0;
-  color: #61806d;
+  color: var(--admin-text-secondary, #61806d);
   font-size: 0.88rem;
   line-height: 1.5;
 }
@@ -631,8 +665,8 @@ onBeforeUnmount(() => {
   min-height: 2rem;
   padding: 0.45rem 0.8rem;
   border-radius: 999px;
-  background: rgba(47, 106, 73, 0.09);
-  color: #29543d;
+  background: var(--admin-theme-accent-soft, rgba(47, 106, 73, 0.09));
+  color: var(--admin-theme-accent, #29543d);
   font-size: 0.8rem;
   font-weight: 600;
   white-space: nowrap;
@@ -658,31 +692,84 @@ onBeforeUnmount(() => {
 }
 
 .admin-job-posts__table-shell {
+  border: 1px solid var(--admin-border-color, rgba(122, 179, 145, 0.12));
+  border-radius: 1rem;
+  background: var(--admin-bg-surface, #ffffff);
   overflow-x: auto;
 }
 
 .admin-job-posts__table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 82rem;
+  table-layout: fixed;
+  min-width: 84rem;
+}
+
+.admin-job-posts__col--job {
+  width: 24rem;
+}
+
+.admin-job-posts__col--company {
+  width: 16rem;
+}
+
+.admin-job-posts__col--status {
+  width: 8.5rem;
+}
+
+.admin-job-posts__col--vacancies {
+  width: 7rem;
+}
+
+.admin-job-posts__col--salary {
+  width: 11rem;
+}
+
+.admin-job-posts__col--updated {
+  width: 11rem;
+}
+
+.admin-job-posts__col--actions {
+  width: 9.75rem;
 }
 
 .admin-job-posts__table th {
-  padding: 0 0.8rem 0.75rem;
-  color: #6c8575;
+  padding: 0.95rem 0.9rem;
+  color: var(--admin-text-secondary, #6c8575);
   font-size: 0.76rem;
   font-weight: 600;
   text-align: left;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+  background: var(--admin-bg-surface-muted, #f7fbf8);
+  border-bottom: 1px solid var(--admin-border-color, rgba(122, 179, 145, 0.12));
 }
 
 .admin-job-posts__table td {
-  padding: 0.95rem 0.8rem;
-  border-top: 1px solid rgba(122, 179, 145, 0.12);
+  padding: 0.95rem 0.9rem;
+  border-top: 1px solid var(--admin-border-color, rgba(122, 179, 145, 0.12));
   vertical-align: top;
-  color: #274234;
+  color: var(--admin-text-primary, #274234);
   font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.admin-job-posts__row {
+  transition: background-color 0.18s ease, transform 0.18s ease;
+}
+
+.admin-job-posts__row:hover {
+  background: var(--admin-bg-hover, rgba(241, 245, 249, 0.96));
+}
+
+.admin-job-posts__cell--status,
+.admin-job-posts__cell--metric,
+.admin-job-posts__cell--actions {
+  vertical-align: middle;
+}
+
+.admin-job-posts__cell--actions {
+  text-align: right;
 }
 
 .admin-job-posts__job,
@@ -695,7 +782,7 @@ onBeforeUnmount(() => {
 .admin-job-posts__job strong,
 .admin-job-posts__company strong,
 .admin-job-posts__dates strong {
-  color: #213c30;
+  color: var(--admin-text-primary, #213c30);
   font-size: 0.94rem;
   font-weight: 600;
 }
@@ -703,7 +790,7 @@ onBeforeUnmount(() => {
 .admin-job-posts__job span,
 .admin-job-posts__company span,
 .admin-job-posts__dates span {
-  color: #6f8579;
+  color: var(--admin-text-secondary, #6f8579);
   font-size: 0.78rem;
 }
 
@@ -721,8 +808,8 @@ onBeforeUnmount(() => {
   min-height: 1.55rem;
   padding: 0.2rem 0.55rem;
   border-radius: 999px;
-  background: rgba(47, 106, 73, 0.08);
-  color: #2c5a42;
+  background: var(--admin-theme-accent-soft, rgba(47, 106, 73, 0.08));
+  color: var(--admin-theme-accent, #2c5a42);
   font-size: 0.74rem;
   font-weight: 500;
 }
@@ -730,6 +817,13 @@ onBeforeUnmount(() => {
 .admin-job-posts__badge {
   background: rgba(212, 159, 54, 0.16);
   color: #8b6115;
+}
+
+.admin-job-posts__badge--new {
+  background: rgba(34, 197, 94, 0.14);
+  color: #18794e;
+  font-weight: 900;
+  letter-spacing: 0.1em;
 }
 
 .admin-job-posts__status {
@@ -758,16 +852,21 @@ onBeforeUnmount(() => {
 }
 
 .admin-job-posts__actions {
-  display: flex;
-  flex-wrap: wrap;
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 2.1rem;
   gap: 0.45rem;
+  justify-content: end;
+  align-items: center;
+  width: 100%;
+  white-space: nowrap;
 }
 
 .admin-job-posts__action-button,
 .admin-job-posts__modal-button {
-  border: 1px solid rgba(122, 179, 145, 0.18);
-  background: #ffffff;
-  color: #2b5540;
+  border: 1px solid var(--admin-border-color, rgba(122, 179, 145, 0.18));
+  background: var(--admin-bg-surface, #ffffff);
+  color: var(--admin-text-primary, #2b5540);
   font: inherit;
   cursor: pointer;
   transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
@@ -781,6 +880,8 @@ onBeforeUnmount(() => {
   place-items: center;
   padding: 0;
   font-size: 0.95rem;
+  line-height: 1;
+  flex: 0 0 auto;
 }
 
 .admin-job-posts__modal-button {
@@ -794,8 +895,8 @@ onBeforeUnmount(() => {
 .admin-job-posts__action-button:hover,
 .admin-job-posts__modal-button:hover {
   transform: translateY(-1px);
-  box-shadow: 0 12px 20px rgba(31, 74, 51, 0.08);
-  border-color: rgba(47, 106, 73, 0.26);
+  box-shadow: var(--admin-shadow-soft, 0 12px 20px rgba(31, 74, 51, 0.08));
+  border-color: var(--admin-theme-accent-border, rgba(47, 106, 73, 0.26));
 }
 
 .admin-job-posts__action-button:disabled,
@@ -827,14 +928,14 @@ onBeforeUnmount(() => {
 
 .admin-job-posts__modal-top h3 {
   margin: 0;
-  color: #214133;
+  color: var(--admin-text-primary, #214133);
   font-size: 1.1rem;
   font-weight: 600;
 }
 
 .admin-job-posts__modal-top p {
   margin: 0.2rem 0 0;
-  color: #6b8574;
+  color: var(--admin-text-secondary, #6b8574);
   font-size: 0.84rem;
 }
 
@@ -855,20 +956,20 @@ onBeforeUnmount(() => {
   display: grid;
   gap: 0.24rem;
   padding: 0.85rem 0.9rem;
-  border: 1px solid rgba(122, 179, 145, 0.14);
+  border: 1px solid var(--admin-border-color, rgba(122, 179, 145, 0.14));
   border-radius: 0.95rem;
-  background: rgba(247, 251, 248, 0.82);
+  background: var(--admin-bg-surface-muted, rgba(247, 251, 248, 0.82));
 }
 
 .admin-job-posts__detail-card span,
 .admin-job-posts__detail-section span {
-  color: #6d8377;
+  color: var(--admin-text-secondary, #6d8377);
   font-size: 0.75rem;
   font-weight: 600;
 }
 
 .admin-job-posts__detail-card strong {
-  color: #244133;
+  color: var(--admin-text-primary, #244133);
   font-size: 0.88rem;
   font-weight: 600;
   line-height: 1.45;
@@ -881,7 +982,7 @@ onBeforeUnmount(() => {
 
 .admin-job-posts__detail-section p {
   margin: 0;
-  color: #294436;
+  color: var(--admin-text-primary, #294436);
   font-size: 0.9rem;
   line-height: 1.6;
 }
@@ -889,7 +990,7 @@ onBeforeUnmount(() => {
 .admin-job-posts__detail-list {
   margin: 0;
   padding-left: 1.1rem;
-  color: #294436;
+  color: var(--admin-text-primary, #294436);
   font-size: 0.88rem;
   line-height: 1.6;
 }
@@ -900,14 +1001,14 @@ onBeforeUnmount(() => {
 }
 
 .admin-job-posts__delete-copy strong {
-  color: #244133;
+  color: var(--admin-text-primary, #244133);
   font-size: 0.96rem;
   font-weight: 600;
 }
 
 .admin-job-posts__delete-copy p {
   margin: 0;
-  color: #6b8574;
+  color: var(--admin-text-secondary, #6b8574);
   font-size: 0.86rem;
   line-height: 1.5;
 }
@@ -917,27 +1018,36 @@ onBeforeUnmount(() => {
   justify-items: center;
   gap: 0.35rem;
   padding: 2rem 1rem;
-  border: 1px dashed rgba(122, 179, 145, 0.26);
+  border: 1px dashed var(--admin-border-color, rgba(122, 179, 145, 0.26));
   border-radius: 1rem;
-  background: rgba(247, 251, 248, 0.85);
+  background: var(--admin-bg-surface-muted, rgba(247, 251, 248, 0.85));
   text-align: center;
 }
 
 .admin-job-posts__empty i {
-  color: #7aa787;
+  color: var(--admin-text-muted, #7aa787);
   font-size: 1.45rem;
 }
 
 .admin-job-posts__empty strong {
-  color: #244133;
+  color: var(--admin-text-primary, #244133);
   font-size: 1rem;
   font-weight: 600;
 }
 
 .admin-job-posts__empty span {
-  color: #6b8574;
+  color: var(--admin-text-secondary, #6b8574);
   font-size: 0.84rem;
   line-height: 1.5;
+}
+
+.admin-job-posts__metric {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.8rem;
+  color: var(--admin-text-primary, #274234);
+  font-weight: 600;
+  line-height: 1.4;
 }
 
 @media (max-width: 1080px) {
@@ -952,9 +1062,13 @@ onBeforeUnmount(() => {
   .admin-job-posts__detail-grid {
     grid-template-columns: minmax(0, 1fr);
   }
+
+  .admin-job-posts__table {
+    min-width: 76rem;
+  }
 }
 
-@media (max-width: 640px) {
+@media (max-width: 900px) {
   .admin-job-posts__summary {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -973,6 +1087,70 @@ onBeforeUnmount(() => {
 
   .admin-job-posts__modal-badges {
     justify-content: flex-start;
+  }
+
+  .admin-job-posts__table,
+  .admin-job-posts__table thead,
+  .admin-job-posts__table tbody,
+  .admin-job-posts__table tr,
+  .admin-job-posts__table th,
+  .admin-job-posts__table td {
+    display: block;
+    width: 100%;
+  }
+
+  .admin-job-posts__table {
+    min-width: 0;
+  }
+
+  .admin-job-posts__table thead {
+    display: none;
+  }
+
+  .admin-job-posts__row {
+    display: grid;
+    gap: 0.75rem;
+    padding: 0.95rem;
+    border-top: 1px solid var(--admin-border-color, rgba(122, 179, 145, 0.12));
+  }
+
+  .admin-job-posts__row:first-child {
+    border-top: 0;
+  }
+
+  .admin-job-posts__table td {
+    padding: 0;
+    border-top: 0;
+  }
+
+  .admin-job-posts__table td::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 0.28rem;
+    color: var(--admin-text-muted, #6c8575);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .admin-job-posts__actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    width: auto;
+    white-space: normal;
+  }
+}
+
+@media (max-width: 640px) {
+  .admin-job-posts__toolbar {
+    gap: 0.75rem;
+  }
+
+  .admin-job-posts__summary-card,
+  .admin-job-posts__panel {
+    padding-inline: 0.9rem;
   }
 }
 </style>

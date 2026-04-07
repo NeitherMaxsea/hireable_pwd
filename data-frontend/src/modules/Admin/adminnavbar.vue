@@ -202,8 +202,8 @@ const showBreadcrumbParent = () =>
   gap: 1rem;
   min-height: 3.4rem;
   padding: 0.55rem 0.1rem 0.9rem;
-  border-bottom: 1px solid rgba(223, 227, 234, 0.92);
-  background: #ffffff;
+  border-bottom: 1px solid var(--admin-border-color);
+  background: transparent;
   font-family: "Inter", "Segoe UI", sans-serif;
   position: relative;
   z-index: 100;
@@ -219,7 +219,7 @@ const showBreadcrumbParent = () =>
   display: inline-flex;
   align-items: center;
   gap: 0.48rem;
-  color: #8a93a5;
+  color: var(--admin-text-muted);
   font-size: 0.78rem;
   font-weight: 600;
 }
@@ -237,22 +237,22 @@ const showBreadcrumbParent = () =>
   display: grid;
   place-items: center;
   border-radius: 0.45rem;
-  color: #6b7280;
+  color: var(--admin-icon-color);
   background: transparent;
 }
 
 .admin-navbar__breadcrumb-separator {
   font-size: 0.62rem;
-  color: #a0a8b8;
+  color: var(--admin-text-muted);
 }
 
 .admin-navbar__breadcrumb-current {
-  color: #1f2937;
+  color: var(--admin-text-primary);
   font-weight: 700;
 }
 
 .admin-navbar__breadcrumb-parent {
-  color: #6f7a8d;
+  color: var(--admin-text-secondary);
   font-weight: 600;
 }
 
@@ -277,10 +277,10 @@ const showBreadcrumbParent = () =>
   position: relative;
   overflow: visible;
   padding: 0.24rem 0.28rem 0.24rem 0.55rem;
-  border: 1px solid rgba(223, 227, 234, 0.9);
+  border: 1px solid var(--admin-border-color);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.04);
+  background: var(--admin-bg-surface-elevated);
+  box-shadow: var(--admin-shadow-soft);
 }
 
 .admin-navbar__profile-wrap {
@@ -303,7 +303,7 @@ const showBreadcrumbParent = () =>
   display: grid;
   place-items: center;
   background: transparent;
-  color: #64748b;
+  color: var(--admin-text-secondary);
   cursor: pointer;
   transition:
     transform 0.22s ease,
@@ -313,9 +313,9 @@ const showBreadcrumbParent = () =>
 }
 
 .admin-navbar__tool:hover {
-  color: #1f2937;
-  background: rgba(240, 247, 243, 0.95);
-  box-shadow: inset 0 0 0 1px rgba(128, 177, 149, 0.18);
+  color: var(--admin-text-primary);
+  background: var(--admin-bg-hover-strong);
+  box-shadow: inset 0 0 0 1px var(--admin-theme-accent-border);
 }
 
 .admin-navbar__tool--notification {
@@ -360,7 +360,7 @@ const showBreadcrumbParent = () =>
 }
 
 .admin-navbar__profile:hover {
-  background: rgba(240, 247, 243, 0.95);
+  background: var(--admin-bg-hover-strong);
 }
 
 .admin-navbar__avatar {
@@ -389,10 +389,10 @@ const showBreadcrumbParent = () =>
   right: 0;
   min-width: 10rem;
   padding: 0.38rem;
-  border: 1px solid rgba(164, 171, 188, 0.36);
+  border: 1px solid var(--admin-border-color);
   border-radius: 0.9rem;
-  background: rgba(255, 255, 255, 0.98);
-  box-shadow: 0 16px 30px rgba(96, 108, 128, 0.16);
+  background: var(--admin-bg-surface-elevated);
+  box-shadow: var(--admin-shadow-soft);
   backdrop-filter: blur(12px);
   z-index: 115;
 }
@@ -407,7 +407,7 @@ const showBreadcrumbParent = () =>
   align-items: center;
   gap: 0.65rem;
   background: transparent;
-  color: #374153;
+  color: var(--admin-text-secondary);
   font-size: 0.86rem;
   font-weight: 600;
   cursor: pointer;
@@ -419,10 +419,10 @@ const showBreadcrumbParent = () =>
   right: 0;
   width: min(24rem, calc(100vw - 2rem));
   padding: 0.55rem;
-  border: 1px solid rgba(164, 171, 188, 0.36);
+  border: 1px solid var(--admin-border-color);
   border-radius: 1rem;
-  background: rgba(255, 255, 255, 0.98);
-  box-shadow: 0 16px 30px rgba(96, 108, 128, 0.16);
+  background: var(--admin-bg-surface-elevated);
+  box-shadow: var(--admin-shadow-soft);
   backdrop-filter: blur(12px);
   z-index: 115;
 }
@@ -437,13 +437,13 @@ const showBreadcrumbParent = () =>
 
 .admin-navbar__notification-head strong {
   display: block;
-  color: #2f3b51;
+  color: var(--admin-text-primary);
   font-size: 0.92rem;
   font-weight: 700;
 }
 
 .admin-navbar__notification-head span {
-  color: #7b879a;
+  color: var(--admin-text-muted);
   font-size: 0.75rem;
 }
 
@@ -481,11 +481,11 @@ const showBreadcrumbParent = () =>
 
 .admin-navbar__notification-item:hover {
   transform: translateY(-1px);
-  background: #f2f5fb;
+  background: var(--admin-bg-hover);
 }
 
 .admin-navbar__notification-item.is-unread {
-  background: rgba(223, 239, 252, 0.55);
+  background: var(--admin-theme-accent-soft);
 }
 
 .admin-navbar__notification-dot {
@@ -493,7 +493,7 @@ const showBreadcrumbParent = () =>
   height: 0.55rem;
   margin-top: 0.4rem;
   border-radius: 999px;
-  background: rgba(122, 137, 160, 0.38);
+  background: rgba(148, 163, 184, 0.48);
 }
 
 .admin-navbar__notification-dot.is-unread {
@@ -507,33 +507,33 @@ const showBreadcrumbParent = () =>
 }
 
 .admin-navbar__notification-copy strong {
-  color: #2f3b51;
+  color: var(--admin-text-primary);
   font-size: 0.84rem;
   font-weight: 700;
 }
 
 .admin-navbar__notification-copy span {
-  color: #58657c;
+  color: var(--admin-text-secondary);
   font-size: 0.78rem;
   line-height: 1.45;
 }
 
 .admin-navbar__notification-copy small {
-  color: #8a93a5;
+  color: var(--admin-text-muted);
   font-size: 0.7rem;
 }
 
 .admin-navbar__notification-empty {
   padding: 1rem 0.8rem;
   border-radius: 0.8rem;
-  color: #6d788e;
+  color: var(--admin-text-secondary);
   font-size: 0.8rem;
-  background: #f7f9fc;
+  background: var(--admin-bg-surface-muted);
   text-align: center;
 }
 
 .admin-navbar__dropdown-item:hover {
-  background: #f2f5fb;
+  background: var(--admin-bg-hover);
 }
 
 @media (max-width: 900px) {

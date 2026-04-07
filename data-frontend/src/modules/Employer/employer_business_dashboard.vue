@@ -15,6 +15,15 @@ const businessName = computed(() =>
 const businessEmail = computed(() =>
   String(storedUser.value?.email || storedUser.value?.business_contact_email || '').trim().toLowerCase(),
 )
+const workspaceErrorMessage = computed(() => {
+  const normalizedMessage = String(workspaceError.value || '').trim()
+  if (!normalizedMessage) return 'The workspace could not finish loading.'
+  if (normalizedMessage.includes("reading 'value'")) {
+    return 'The workspace hit a temporary loading problem. Reload the workspace to continue.'
+  }
+
+  return 'The workspace could not finish loading. Reload the workspace to continue.'
+})
 
 const buildWorkspaceReloadLocation = () => {
   if (typeof window === 'undefined') return '/employer/business'
@@ -31,10 +40,15 @@ const recoverBusinessWorkspace = () => {
 
 onErrorCaptured((error, instance, info) => {
   console.error('[employer-business-dashboard] workspace render failed:', error, info)
+  const normalizedErrorMessage = error instanceof Error ? String(error.message || '').trim() : ''
+
   if (
     typeof window !== 'undefined'
-    && error instanceof Error
-    && error.message.includes("reading 'visible'")
+    && normalizedErrorMessage
+    && (
+      normalizedErrorMessage.includes("reading 'visible'")
+      || normalizedErrorMessage.includes("reading 'value'")
+    )
     && sessionStorage.getItem(BUSINESS_WORKSPACE_AUTO_RECOVERY_KEY) !== '1'
   ) {
     sessionStorage.setItem(BUSINESS_WORKSPACE_AUTO_RECOVERY_KEY, '1')
@@ -76,7 +90,7 @@ const goToLogin = async () => {
       <p class="business-dashboard-fallback__copy">
         The workspace could not finish loading. Try reloading the workspace first.
       </p>
-      <p class="business-dashboard-fallback__error">{{ workspaceError }}</p>
+      <p class="business-dashboard-fallback__error">{{ workspaceErrorMessage }}</p>
       <div class="business-dashboard-fallback__actions">
         <button type="button" class="business-dashboard-fallback__button business-dashboard-fallback__button--primary" @click="reloadWorkspace">
           Reload Workspace

@@ -16,6 +16,10 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  newEmployeeIds: {
+    type: Array,
+    default: () => [],
+  },
   workspaceMembersByBusinessId: {
     type: Object,
     default: () => ({}),
@@ -81,6 +85,12 @@ const employeeInitials = (record) => {
 
 const employeeAvatarSrc = (record) =>
   String(record?.business_avatar || record?.avatar || '').trim()
+const newEmployeeIdSet = computed(() => new Set(
+  (Array.isArray(props.newEmployeeIds) ? props.newEmployeeIds : [])
+    .map((value) => String(value || '').trim())
+    .filter(Boolean),
+))
+const isNewEmployee = (record) => newEmployeeIdSet.value.has(employeeRecordId(record))
 
 const formatEmployeeDate = (value) => {
   const date = new Date(value)
@@ -504,18 +514,13 @@ const employeeDetailRows = computed(() => {
 const employeeOverviewCards = computed(() => {
   const employee = selectedEmployee.value
   if (!employee) return []
-
-  const documentCount = [
-    employee?.company_verification_document_1_path,
-    employee?.company_verification_document_2_path,
-    employee?.company_verification_document_3_path,
-  ].filter((value) => String(value || '').trim()).length
+  const documentCount = employeeVerificationDocuments.value.length
 
   return [
     { label: 'Account ID', value: displayText(employee?.public_id, 'Pending ID') },
     { label: 'Status', value: titleCaseText(employee?.approval_status, 'Pending') },
     { label: 'Type', value: titleCaseText(employee?.company_organization_type || 'business', 'Business') },
-    { label: 'Files', value: `${documentCount} document${documentCount === 1 ? '' : 's'}` },
+    { label: 'Files', value: `${documentCount} ${documentCount === 1 ? 'document' : 'documents'}` },
   ]
 })
 
@@ -1106,7 +1111,10 @@ const handleBulkEmployeeDelete = async () => {
                   <template v-else>{{ employeeInitials(employee) }}</template>
                 </span>
                 <span class="employee-list-table__identity">
-                  <strong>{{ employeeDisplayName(employee) }}</strong>
+                  <span class="employee-list-table__identity-top">
+                    <span v-if="isNewEmployee(employee)" class="employee-list-table__new-badge">NEW</span>
+                    <strong>{{ employeeDisplayName(employee) }}</strong>
+                  </span>
                   <span>{{ employeeEmail(employee) }}</span>
                 </span>
               </div>
@@ -1214,7 +1222,7 @@ const handleBulkEmployeeDelete = async () => {
       :title="employeeModalTitle"
       :subtitle="employeeModalSubtitle"
       :show-close-button="employeeModalShowHeaderClose"
-      :max-width="activeModal === 'delete' || activeModal === 'disable' ? '30rem' : '46rem'"
+      :max-width="activeModal === 'view' ? '56rem' : activeModal === 'delete' || activeModal === 'disable' ? '30rem' : '46rem'"
       @close="closeEmployeeModal"
     >
       <div v-if="activeModal === 'view'" class="employee-modal__workspace">
@@ -1242,14 +1250,14 @@ const handleBulkEmployeeDelete = async () => {
               </div>
             </div>
           </div>
-
-          <div class="employee-modal__overview-grid">
-            <div v-for="card in employeeOverviewCards" :key="card.label" class="employee-modal__overview-card">
-              <span>{{ card.label }}</span>
-              <strong>{{ card.value }}</strong>
-            </div>
-          </div>
         </section>
+
+        <div class="employee-modal__overview-strip">
+          <div v-for="card in employeeOverviewCards" :key="card.label" class="employee-modal__overview-item">
+            <span>{{ card.label }}</span>
+            <strong>{{ card.value }}</strong>
+          </div>
+        </div>
 
         <div class="employee-modal__section-grid">
           <section class="employee-modal__section">
@@ -1291,37 +1299,48 @@ const handleBulkEmployeeDelete = async () => {
             </div>
           </section>
 
-          <section class="employee-modal__section">
+          <section class="employee-modal__section employee-modal__section--full">
             <div class="employee-modal__section-heading">
               <strong>Verification Files</strong>
               <span>Documents detected on the business profile.</span>
             </div>
             <div v-if="employeeVerificationDocuments.length" class="employee-modal__document-list">
-              <div
+              <article
                 v-for="document in employeeVerificationDocuments"
                 :key="document.id"
                 class="employee-modal__document-item"
               >
                 <div class="employee-modal__document-content">
-                  <div v-if="document.isImage" class="employee-modal__document-preview">
-                    <a
-                      class="employee-modal__document-preview-link"
-                      href="#"
-                      @click.prevent="openImagePreview(document)"
-                    >
-                      <img :src="document.value" :alt="document.fileName" loading="lazy" />
-                    </a>
-                  </div>
                   <div class="employee-modal__document-copy">
                     <strong>{{ document.label }}</strong>
                     <span class="employee-modal__document-name">{{ document.fileName }}</span>
                     <span>{{ document.fileType }}</span>
                   </div>
+
+                  <div v-if="document.isImage" class="employee-modal__document-preview">
+                    <a
+                      href="#"
+                      class="employee-modal__document-preview-link"
+                      @click.prevent="openImagePreview(document)"
+                    >
+                      <img :src="document.value" :alt="document.fileName">
+                    </a>
+                  </div>
+
+                  <a
+                    v-else
+                    class="employee-modal__document-link"
+                    :href="document.value"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Open file
+                  </a>
                 </div>
-              </div>
+              </article>
             </div>
             <div v-else class="employee-modal__empty">
-              No verification files are attached to this business account yet.
+              No verification files were uploaded for this business yet.
             </div>
           </section>
 
@@ -1933,6 +1952,13 @@ const handleBulkEmployeeDelete = async () => {
   min-width: 0;
 }
 
+.employee-list-table__identity-top {
+  display: flex;
+  align-items: center;
+  gap: 0.42rem;
+  min-width: 0;
+}
+
 .employee-list-table__identity strong {
   color: #1f3a2d;
   font-size: 0.88rem;
@@ -1944,6 +1970,22 @@ const handleBulkEmployeeDelete = async () => {
   font-size: 0.76rem;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.employee-list-table__new-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.3rem;
+  padding: 0 0.45rem;
+  border-radius: 999px;
+  background: rgba(34, 197, 94, 0.14);
+  color: #18794e;
+  font-size: 0.63rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .employee-status-pill {
@@ -2076,8 +2118,8 @@ const handleBulkEmployeeDelete = async () => {
 
 .employee-modal__details {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.75rem;
+  grid-template-columns: 1fr;
+  gap: 0;
 }
 
 .employee-modal__workspace {
@@ -2088,10 +2130,11 @@ const handleBulkEmployeeDelete = async () => {
 .employee-modal__hero {
   display: grid;
   gap: 0.95rem;
-  padding: 1rem;
-  border: 1px solid rgba(122, 179, 145, 0.12);
-  border-radius: 1rem;
-  background: linear-gradient(180deg, #ffffff 0%, #f7fbf8 100%);
+  padding: 0 0 1rem;
+  border-bottom: 1px solid rgba(122, 179, 145, 0.18);
+  background:
+    radial-gradient(circle at top left, rgba(95, 178, 129, 0.08), transparent 32%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.84) 0%, rgba(247, 251, 248, 0.58) 100%);
 }
 
 .employee-modal__hero-main {
@@ -2139,13 +2182,15 @@ const handleBulkEmployeeDelete = async () => {
 
 .employee-modal__hero-copy strong {
   color: #1f3a2d;
-  font-size: 1rem;
+  font-size: 1.04rem;
   font-weight: 800;
+  letter-spacing: -0.03em;
 }
 
 .employee-modal__hero-copy span {
   color: #6e8577;
-  font-size: 0.8rem;
+  font-size: 0.84rem;
+  font-weight: 500;
 }
 
 .employee-modal__hero-meta {
@@ -2161,56 +2206,67 @@ const handleBulkEmployeeDelete = async () => {
   align-items: center;
   justify-content: center;
   min-height: 2rem;
-  padding: 0.3rem 0.72rem;
+  max-width: 100%;
+  padding: 0.42rem 0.72rem;
   border: 1px solid #d7dfd9;
   border-radius: 999px;
   background: linear-gradient(180deg, #ffffff 0%, #f6f9f7 100%);
   color: #305141;
   font-size: 0.72rem;
   font-weight: 800;
-  line-height: 1;
+  line-height: 1.3;
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
-.employee-modal__overview-grid {
+.employee-modal__overview-strip {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0;
+  border-top: 1px solid rgba(122, 179, 145, 0.14);
+  border-bottom: 1px solid rgba(122, 179, 145, 0.14);
 }
 
-.employee-modal__overview-card {
-  padding: 0.8rem 0.85rem;
-  border: 1px solid rgba(122, 179, 145, 0.12);
-  border-radius: 0.9rem;
-  background: #ffffff;
+.employee-modal__overview-item {
+  padding: 0.85rem 1rem 0.95rem;
   display: grid;
-  gap: 0.22rem;
+  gap: 0.28rem;
 }
 
-.employee-modal__overview-card span {
+.employee-modal__overview-item + .employee-modal__overview-item {
+  border-left: 1px solid rgba(122, 179, 145, 0.14);
+}
+
+.employee-modal__overview-item span {
   color: #6b8574;
   font-size: 0.72rem;
   font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
-.employee-modal__overview-card strong {
+.employee-modal__overview-item strong {
   color: #234031;
   font-size: 0.88rem;
   line-height: 1.4;
+  font-weight: 800;
 }
 
 .employee-modal__section-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.9rem;
+  grid-template-columns: 1fr;
+  gap: 1.15rem;
 }
 
 .employee-modal__section {
   display: grid;
-  gap: 0.8rem;
-  padding: 0.95rem;
-  border: 1px solid rgba(122, 179, 145, 0.12);
-  border-radius: 1rem;
-  background: #fbfdfb;
+  gap: 1rem;
+  padding: 0;
+  border: 0;
+  border-top: 1px solid rgba(122, 179, 145, 0.16);
+  background: transparent;
+  padding-top: 1rem;
 }
 
 .employee-modal__section--full {
@@ -2219,18 +2275,21 @@ const handleBulkEmployeeDelete = async () => {
 
 .employee-modal__section-heading {
   display: grid;
-  gap: 0.15rem;
+  gap: 0.22rem;
 }
 
 .employee-modal__section-heading strong {
   color: #1f3a2d;
-  font-size: 0.88rem;
+  font-size: 0.9rem;
   font-weight: 800;
+  letter-spacing: -0.03em;
+  text-transform: none;
 }
 
 .employee-modal__section-heading span {
   color: #70877a;
-  font-size: 0.76rem;
+  font-size: 0.78rem;
+  font-weight: 500;
   line-height: 1.45;
 }
 
@@ -2268,12 +2327,13 @@ const handleBulkEmployeeDelete = async () => {
 }
 
 .employee-modal__detail {
-  padding: 0.75rem 0.8rem;
-  border: 1px solid rgba(122, 179, 145, 0.12);
-  border-radius: 0.8rem;
-  background: #f8fbf9;
+  grid-template-columns: minmax(9rem, 11rem) minmax(0, 1fr);
+  align-items: start;
+  padding: 0.85rem 0;
+  border-bottom: 1px solid rgba(122, 179, 145, 0.12);
   display: grid;
-  gap: 0.25rem;
+  gap: 0.9rem;
+  min-width: 0;
 }
 
 .employee-modal__detail span,
@@ -2281,18 +2341,24 @@ const handleBulkEmployeeDelete = async () => {
   color: #6b8574;
   font-size: 0.75rem;
   font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0.01em;
+  line-height: 1.5;
 }
 
 .employee-modal__detail strong {
   color: #264333;
-  font-size: 0.84rem;
-  line-height: 1.45;
+  font-size: 0.86rem;
+  line-height: 1.55;
+  font-weight: 700;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .employee-modal__document-list,
 .employee-modal__member-list {
   display: grid;
-  gap: 0.75rem;
+  gap: 0;
 }
 
 .employee-modal__document-item,
@@ -2301,10 +2367,9 @@ const handleBulkEmployeeDelete = async () => {
   grid-template-columns: minmax(0, 1fr);
   gap: 0.75rem;
   align-items: start;
-  padding: 0.85rem 0.9rem;
-  border: 1px solid rgba(122, 179, 145, 0.12);
-  border-radius: 0.9rem;
-  background: #ffffff;
+  padding: 0.95rem 0;
+  border-bottom: 1px solid rgba(122, 179, 145, 0.12);
+  background: transparent;
 }
 
 .employee-modal__document-content,
@@ -2323,7 +2388,7 @@ const handleBulkEmployeeDelete = async () => {
 .employee-modal__document-preview {
   width: 100%;
   max-width: 18rem;
-  border-radius: 0.85rem;
+  border-radius: 0.65rem;
   overflow: hidden;
   border: 1px solid rgba(122, 179, 145, 0.14);
   background: #f8fbf9;
@@ -2345,13 +2410,16 @@ const handleBulkEmployeeDelete = async () => {
 .employee-modal__document-item strong,
 .employee-modal__member-copy strong {
   color: #234031;
-  font-size: 0.84rem;
+  font-size: 0.86rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
 }
 
 .employee-modal__document-item span,
 .employee-modal__member-copy span {
   color: #70877a;
-  font-size: 0.74rem;
+  font-size: 0.77rem;
+  font-weight: 500;
   line-height: 1.45;
   overflow-wrap: anywhere;
 }
@@ -2360,6 +2428,22 @@ const handleBulkEmployeeDelete = async () => {
   color: #264333 !important;
   font-size: 0.8rem !important;
   font-weight: 700;
+}
+
+.employee-modal__document-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  min-height: 2.25rem;
+  padding: 0.55rem 0.9rem;
+  border: 1px solid rgba(122, 179, 145, 0.2);
+  border-radius: 0.7rem;
+  background: #f6faf7;
+  color: #234031;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-decoration: none;
 }
 
 .employee-modal__member-card {
@@ -2376,12 +2460,13 @@ const handleBulkEmployeeDelete = async () => {
 }
 
 .employee-modal__empty {
-  padding: 0.95rem 1rem;
-  border: 1px dashed rgba(122, 179, 145, 0.26);
-  border-radius: 0.9rem;
-  background: rgba(247, 251, 248, 0.9);
+  padding: 1rem 0;
+  border-top: 1px dashed rgba(122, 179, 145, 0.26);
+  border-bottom: 1px dashed rgba(122, 179, 145, 0.26);
+  background: transparent;
   color: #6f8578;
-  font-size: 0.78rem;
+  font-size: 0.8rem;
+  font-weight: 600;
   line-height: 1.5;
 }
 
@@ -2392,7 +2477,7 @@ const handleBulkEmployeeDelete = async () => {
   display: grid;
   place-items: center;
   padding: 2rem 5.5rem 2rem 2rem;
-  background: rgba(16, 24, 20, 0.78);
+  background: var(--admin-bg-overlay, rgba(16, 24, 20, 0.78));
   backdrop-filter: blur(4px);
 }
 
@@ -2417,10 +2502,10 @@ const handleBulkEmployeeDelete = async () => {
   right: 1.4rem;
   width: 2.85rem;
   height: 2.85rem;
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  border: 1px solid var(--admin-border-color, rgba(255, 255, 255, 0.3));
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
+  background: var(--admin-bg-surface-elevated, rgba(255, 255, 255, 0.12));
+  color: var(--admin-text-primary, #fff);
   font: inherit;
   display: grid;
   place-items: center;
@@ -2433,7 +2518,7 @@ const handleBulkEmployeeDelete = async () => {
 }
 
 .employee-image-viewer__close:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--admin-bg-hover, rgba(255, 255, 255, 0.2));
   transform: translateY(-2px);
 }
 
@@ -2613,9 +2698,19 @@ const handleBulkEmployeeDelete = async () => {
     grid-template-columns: 1fr;
   }
 
-  .employee-modal__overview-grid,
+  .employee-modal__overview-strip,
   .employee-modal__section-grid {
     grid-template-columns: 1fr;
+  }
+
+  .employee-modal__overview-item + .employee-modal__overview-item {
+    border-left: 0;
+    border-top: 1px solid rgba(122, 179, 145, 0.14);
+  }
+
+  .employee-modal__detail {
+    grid-template-columns: 1fr;
+    gap: 0.3rem;
   }
 
   .employee-modal__member-card {

@@ -545,8 +545,34 @@ const businessSystemNotifications = computed(() =>
     .filter(Boolean),
 )
 
+const businessAdminDirectNotifications = computed(() =>
+  (Array.isArray(authUser.value?.admin_direct_messages)
+    ? authUser.value.admin_direct_messages
+    : Array.isArray(authUser.value?.adminDirectMessages)
+      ? authUser.value.adminDirectMessages
+      : [])
+    .map((message, index) => {
+      const notificationId = String(message?.id || `business-admin-message-${index + 1}`).trim()
+      const notificationMessage = String(message?.message || message?.copy || '').trim()
+      if (!notificationId || !notificationMessage) return null
+
+      const createdAt = String(message?.createdAt || message?.created_at || '').trim() || new Date().toISOString()
+      return {
+        id: notificationId,
+        title: String(message?.title || 'Admin message').trim() || 'Admin message',
+        message: notificationMessage,
+        tone: String(message?.tone || 'accent').trim().toLowerCase() || 'accent',
+        section: 'admin-messages',
+        createdAt,
+        createdAtLabel: formatBusinessNotificationTime(new Date(createdAt)),
+        kind: 'admin-direct-message',
+      }
+    })
+    .filter(Boolean),
+)
+
 const businessNavbarNotifications = computed(() =>
-  [...businessNotifications.value, ...businessApplicationNotifications.value, ...businessJobOfferNotifications.value, ...businessSystemNotifications.value]
+  [...businessAdminDirectNotifications.value, ...businessNotifications.value, ...businessApplicationNotifications.value, ...businessJobOfferNotifications.value, ...businessSystemNotifications.value]
     .sort((left, right) => Date.parse(right?.createdAt || '') - Date.parse(left?.createdAt || ''))
     .slice(0, 8)
     .map((notification) => ({
@@ -617,6 +643,7 @@ const notifyBusinessActivity = (notification = {}) => {
 
 const resolveBusinessNotificationSectionLabel = (value = '') => {
   const normalizedValue = String(value || '').trim().toLowerCase()
+  if (normalizedValue === 'admin-messages') return 'Admin Message'
   if (normalizedValue === 'applicant-management') return 'Applicant Management'
   if (normalizedValue === 'issue-offer') return 'Issue Offer'
   if (normalizedValue === 'contract-signing') return 'Contract Signing'
@@ -660,6 +687,7 @@ const businessNotificationPrimaryActionLabel = computed(() => {
   const notification = selectedBusinessNotification.value || {}
   const targetSection = String(notification?.section || '').trim()
   if (String(notification?.applicationId || '').trim()) return 'Open applicant'
+  if (targetSection === 'admin-messages') return 'Open workspace'
   if (targetSection === 'subscriptions') return 'Open subscriptions'
   if (targetSection === 'profile') return 'Open profile'
   if (targetSection) return `Open ${String(notification?.sectionLabel || 'section').trim()}`
@@ -674,6 +702,11 @@ const openBusinessNotificationTarget = () => {
   closeBusinessNotificationDetail()
 
   if (targetApplicationId) {
+    if (isBusinessSubscriptionSidebarLocked.value) {
+      openBusinessSubscriptionSection()
+      return
+    }
+
     activeSection.value = 'applicant-management'
     void nextTick(() => {
       openApplicantManagementDecision(targetApplicationId, 'view')
@@ -687,12 +720,12 @@ const openBusinessNotificationTarget = () => {
   }
 
   if (targetSection === 'profile') {
-    activeSection.value = 'profile'
+    activeSection.value = resolveAccessibleBusinessSection('profile')
     return
   }
 
   if (targetSection && availableSidebarSectionIds.value.includes(targetSection)) {
-    activeSection.value = targetSection
+    activeSection.value = resolveAccessibleBusinessSection(targetSection)
     return
   }
 
@@ -789,8 +822,17 @@ const restoreAdminPlanCatalog = () => {
   adminPlanCatalog.value = readAdminPlanCatalog()
 }
 
+const isBusinessSubscriptionSidebarLocked = computed(() =>
+  hasOwnerWorkspaceAccess.value
+  && Boolean(authUser.value)
+  && isSubscriptionStateHydrated.value
+  && !hasActiveBusinessSubscriptionState(),
+)
+
 // Sidebar structure at visible modules dito dumadaan para automatic sumunod sa current workspace permissions.
 const sidebarGroups = computed(() => {
+  if (isBusinessSubscriptionSidebarLocked.value) return []
+
   return [
     {
       id: 'dashboard',
@@ -888,9 +930,7 @@ const sidebarGroups = computed(() => {
     .map((group) => ({
       ...group,
       items: group.items.filter((item) =>
-        item.id === 'dashboard'
-          ? true
-          : item.id === 'training-templates'
+        item.id === 'training-templates'
           ? canViewTrainingWorkspace()
           : canViewBusinessModule(item.id),
       ),
@@ -1059,7 +1099,7 @@ const availableSidebarSectionIds = computed(() =>
   sidebarGroups.value.flatMap((group) => group.items.map((item) => item.id)),
 )
 const resolveFirstAvailableBusinessSection = () =>
-  availableSidebarSectionIds.value[0] || 'dashboard'
+  isBusinessSubscriptionSidebarLocked.value ? 'subscriptions' : (availableSidebarSectionIds.value[0] || 'dashboard')
 
 const getSidebarItemIcon = (itemId = '') =>
   premiumNavigationItems.find((item) => item.id === itemId)?.icon
@@ -2682,7 +2722,9 @@ const businessSidebarBrandSubtitle = computed(() =>
   isCurrentWorkspaceMember.value ? 'Workspace Owner' : 'Business Workspace',
 )
 const businessSidebarSecondarySectionLabel = computed(() =>
-  hasOwnerWorkspaceAccess.value ? 'Quick Access' : 'Employee Access',
+  hasOwnerWorkspaceAccess.value
+    ? (isBusinessSubscriptionSidebarLocked.value ? 'Account' : 'Quick Access')
+    : 'Employee Access',
 )
 const businessNavbarBreadcrumbParent = computed(() =>
   isCurrentWorkspaceMember.value ? `${loggedInBusinessUserRoleLabel.value} Workspace` : 'Business Workspace',
@@ -2696,6 +2738,10 @@ const canAccessOwnerWorkspaceControls = computed(() => hasOwnerWorkspaceAccess.v
 function resolveAccessibleBusinessSection(sectionId = '') {
   const normalizedSection = String(sectionId || '').trim()
   if (!normalizedSection) return resolveFirstAvailableBusinessSection()
+
+  if (isBusinessSubscriptionSidebarLocked.value) {
+    return 'subscriptions'
+  }
 
   if (
     ['profile', 'subscriptions'].includes(normalizedSection)
@@ -8362,6 +8408,7 @@ const clearPendingPayMongoCheckout = () => {
 
 const persistBusinessSubscriptionState = () => {
   if (!authUser.value) return
+  if (!isSubscriptionStateHydrated.value) return
 
   const payload = {
     sessionUserId: String(authUser.value?.id || authUser.value?.uid || '').trim(),
@@ -8385,6 +8432,7 @@ const persistBusinessSubscriptionState = () => {
 
 const syncBusinessSubscriptionStateToProfile = async () => {
   if (!authUser.value?.id) return
+  if (!isSubscriptionStateHydrated.value) return
 
   const payload = {
     active_subscription_plan: activeSubscriptionPlan.value,
@@ -8447,7 +8495,7 @@ const applyDefaultBusinessSubscriptionLanding = () => {
   activeSubscriptionMode.value = 'none'
   premiumTrialStartedAt.value = null
   premiumPaidStartedAt.value = null
-  activeSection.value = 'dashboard'
+  activeSection.value = resolveAccessibleBusinessSection('subscriptions')
   activeSidebarGroup.value = 'dashboard'
   expandedSidebarGroups.value = []
   subscriptionView.value = 'plans'
@@ -9450,6 +9498,12 @@ const openSidebarGroup = (group) => {
 const handleSidebarSectionClick = (item) => {
   if (!item) return
 
+  if (isBusinessSubscriptionSidebarLocked.value && item.id !== 'subscriptions') {
+    activeSection.value = 'subscriptions'
+    subscriptionView.value = 'plans'
+    return
+  }
+
   activeSection.value = item.id
   if (item.id === 'job-posting') setJobPostingDefaultTab()
   if (item.id === 'training-templates') setTrainingTemplatesTab(trainingTemplatesTab.value)
@@ -10330,6 +10384,11 @@ const openBusinessProfileSection = () => {
     return
   }
 
+  if (isBusinessSubscriptionSidebarLocked.value) {
+    openBusinessSubscriptionSection()
+    return
+  }
+
   activeSection.value = 'profile'
 }
 
@@ -10504,6 +10563,7 @@ const sidebarBindings = createSidebarBindings({
   loggedInBusinessUserRoleLabel,
   businessSidebarSecondarySectionLabel,
   canAccessOwnerWorkspaceControls,
+  isBusinessSubscriptionSidebarLocked,
   sidebarGroups,
   activeSection,
   activeSidebarGroup,
@@ -11240,7 +11300,7 @@ watch(sidebarGroups, (groups) => {
   )
   const previousVisibleItems = Array.isArray(lastVisibleSidebarItems.value) ? lastVisibleSidebarItems.value : []
 
-  if (previousVisibleItems.length) {
+  if (previousVisibleItems.length && !isBusinessSubscriptionSidebarLocked.value) {
     const removedItems = previousVisibleItems.filter((previousItem) =>
       !nextVisibleItems.some((nextItem) => nextItem.id === previousItem.id),
     )
@@ -11273,6 +11333,27 @@ watch(sidebarGroups, (groups) => {
     groups.some((group) => group.id === groupId),
   )
 })
+
+watch(
+  isBusinessSubscriptionSidebarLocked,
+  (isLocked) => {
+    if (!isLocked) return
+
+    if (activeSection.value !== 'subscriptions') {
+      activeSection.value = 'subscriptions'
+    }
+    if (subscriptionView.value !== 'plans') {
+      subscriptionView.value = 'plans'
+    }
+    if (activeSidebarGroup.value !== 'dashboard') {
+      activeSidebarGroup.value = 'dashboard'
+    }
+    if (expandedSidebarGroups.value.length) {
+      expandedSidebarGroups.value = []
+    }
+  },
+  { immediate: true },
+)
 
 watch(activeSection, (nextSection) => {
   if (nextSection === 'assign-templates') {

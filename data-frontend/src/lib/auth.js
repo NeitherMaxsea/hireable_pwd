@@ -43,6 +43,7 @@ const ACCOUNT_PUBLIC_ID_CONFIG = {
   employer: { prefix: 'BUS', start: 101, width: 3 },
 }
 const MEMBER_EMPLOYER_ID_CONFIG = { prefix: 'TMB', start: 1, width: 4 }
+const ADMIN_DIRECT_MESSAGE_LIMIT = 20
 
 const normalizeEmail = (value) => String(value || '').trim().toLowerCase()
 const text = (value) => String(value || '').trim()
@@ -286,7 +287,7 @@ const normalizeWorkspacePermissionRoles = (profile) => {
     .filter(Boolean)
 }
 
-const ADMIN_MODULE_REMOVAL_GRACE_SECONDS = 10
+const ADMIN_MODULE_REMOVAL_GRACE_SECONDS = 0
 const normalizeAdminModuleAccessNotice = (notice = {}) => {
   const moduleId = text(notice?.moduleId || notice?.module_id)
   if (!moduleId) return null
@@ -331,6 +332,47 @@ const normalizeAdminApplicantModuleAccess = (modules = []) =>
     })
     .filter(Boolean)
 
+const normalizeAdminDirectMessage = (message = {}) => {
+  const normalizedMessage = text(message?.message || message?.copy || message?.body)
+  if (!normalizedMessage) return null
+
+  return stripUndefined({
+    id: text(message?.id),
+    kind: text(message?.kind || 'admin-direct-message'),
+    section: text(message?.section || 'admin-messages'),
+    title: text(message?.title || 'Admin message'),
+    message: normalizedMessage,
+    tone: text(message?.tone || 'accent'),
+    senderName: text(message?.senderName || message?.sender_name),
+    senderEmail: normalizeEmail(message?.senderEmail || message?.sender_email),
+    senderRole: text(message?.senderRole || message?.sender_role || 'admin'),
+    createdAt: timestampText(message?.createdAt || message?.created_at) || nowIso(),
+  })
+}
+
+const normalizeAdminDirectMessages = (messages = []) =>
+  (Array.isArray(messages) ? messages : [])
+    .map((message) => normalizeAdminDirectMessage(message))
+    .filter((message) => text(message?.id) && text(message?.message))
+    .sort((left, right) => Date.parse(right?.createdAt || '') - Date.parse(left?.createdAt || ''))
+    .slice(0, ADMIN_DIRECT_MESSAGE_LIMIT)
+
+const mergeAdminDirectMessages = (existingMessages = [], nextMessages = []) => {
+  const messagesById = new Map()
+
+  normalizeAdminDirectMessages(existingMessages).forEach((message) => {
+    messagesById.set(message.id, message)
+  })
+
+  normalizeAdminDirectMessages(nextMessages).forEach((message) => {
+    messagesById.set(message.id, message)
+  })
+
+  return [...messagesById.values()]
+    .sort((left, right) => Date.parse(right?.createdAt || '') - Date.parse(left?.createdAt || ''))
+    .slice(0, ADMIN_DIRECT_MESSAGE_LIMIT)
+}
+
 const getRemovedModuleEntries = (previousModules = [], nextModules = []) => {
   const previousVisibleModules = new Map(
     (Array.isArray(previousModules) ? previousModules : [])
@@ -351,7 +393,9 @@ const getRemovedModuleEntries = (previousModules = [], nextModules = []) => {
 
 const buildModuleRemovalNotices = (modules = [], audience = '') => {
   const createdAt = nowIso()
-  const effectiveAt = secondsFromNowIso(ADMIN_MODULE_REMOVAL_GRACE_SECONDS)
+  const removalDelaySeconds = Math.max(0, Number(ADMIN_MODULE_REMOVAL_GRACE_SECONDS) || 0)
+  const effectiveAt = removalDelaySeconds > 0 ? secondsFromNowIso(removalDelaySeconds) : createdAt
+  const hasGraceDelay = removalDelaySeconds > 0
 
   return (Array.isArray(modules) ? modules : [])
     .map((module) => {
@@ -366,8 +410,10 @@ const buildModuleRemovalNotices = (modules = [], audience = '') => {
         moduleId,
         moduleLabel,
         section: moduleId,
-        title: 'Access update scheduled',
-        message: `${moduleLabel} will be removed from your panel in ${ADMIN_MODULE_REMOVAL_GRACE_SECONDS} seconds by an admin RBAC update.`,
+        title: hasGraceDelay ? 'Access update scheduled' : 'Access updated',
+        message: hasGraceDelay
+          ? `${moduleLabel} will be removed from your panel in ${removalDelaySeconds} seconds by an admin RBAC update.`
+          : `${moduleLabel} was removed from your panel by an admin RBAC update.`,
         createdAt,
         effectiveAt,
         action: 'remove',
@@ -681,6 +727,14 @@ const mapProfileToStoredUser = (profile) => {
     normalizedProfile.adminModuleAccessNotices = cloneJson(normalizedAdminModuleAccessNotices)
   }
 
+  const normalizedAdminDirectMessages = normalizeAdminDirectMessages(
+    profile.admin_direct_messages || profile.adminDirectMessages,
+  )
+  if (normalizedAdminDirectMessages.length) {
+    normalizedProfile.admin_direct_messages = cloneJson(normalizedAdminDirectMessages)
+    normalizedProfile.adminDirectMessages = cloneJson(normalizedAdminDirectMessages)
+  }
+
   const normalizedApplicantModuleAccess = normalizeAdminApplicantModuleAccess(
     profile.admin_applicant_module_access || profile.adminApplicantModuleAccess,
   )
@@ -764,16 +818,46 @@ const buildActivityActor = (fallbackUser = null) => {
   }
 }
 
+const formatActivityLogLabel = (value, fallback = '') =>
+  text(value)
+    .replace(/[._-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (char) => char.toUpperCase()) || fallback
+
+const buildActivityLogDescriptionFallback = (entry = {}, actor = {}) => {
+  const actorName = text(actor?.name || actor?.email || actor?.uid) || 'System'
+  const actionLabel = text(entry?.actionLabel) || formatActivityLogLabel(entry?.action, 'System activity')
+  const targetName = text(entry?.targetName || entry?.targetEmail || entry?.targetId || entry?.targetType)
+
+  return `${actorName} completed ${actionLabel.toLowerCase()}${targetName ? ` for ${targetName}` : ''}.`
+}
+
 const buildActivityLogEntry = (entry = {}, fallbackUser = null) => {
   const actor = buildActivityActor(fallbackUser)
+  const action = text(entry.action)
+  const actionLabel = text(entry.actionLabel) || formatActivityLogLabel(action, 'System activity')
+  const targetName = text(entry.targetName)
+  const targetEmail = normalizeEmail(entry.targetEmail)
+  const targetId = text(entry.targetId)
+  const targetType = text(entry.targetType)
+  const description = text(entry.description) || buildActivityLogDescriptionFallback({
+    action,
+    actionLabel,
+    targetName,
+    targetEmail,
+    targetId,
+    targetType,
+  }, actor)
+
   return {
-    action: text(entry.action),
-    action_label: text(entry.actionLabel),
-    description: text(entry.description),
-    target_type: text(entry.targetType),
-    target_id: text(entry.targetId),
-    target_name: text(entry.targetName),
-    target_email: normalizeEmail(entry.targetEmail),
+    action,
+    action_label: actionLabel,
+    description,
+    target_type: targetType,
+    target_id: targetId,
+    target_name: targetName,
+    target_email: targetEmail,
     status: text(entry.status) || 'success',
     source: text(entry.source) || 'frontend',
     actor,
@@ -795,26 +879,43 @@ export const recordSystemActivity = async (entry = {}, fallbackUser = null) => {
   }
 }
 
-const normalizeActivityLogRecord = (record = {}) => ({
-  id: text(record.id),
-  action: text(record.action),
-  actionLabel: text(record.action_label),
-  description: text(record.description),
-  targetType: text(record.target_type),
-  targetId: text(record.target_id),
-  targetName: text(record.target_name),
-  targetEmail: normalizeEmail(record.target_email),
-  status: text(record.status) || 'success',
-  source: text(record.source) || 'frontend',
-  actor: {
+const normalizeActivityLogRecord = (record = {}) => {
+  const action = text(record.action)
+  const actor = {
     uid: text(record.actor?.uid),
     email: normalizeEmail(record.actor?.email),
     role: text(record.actor?.role),
     name: text(record.actor?.name),
-  },
-  metadata: cloneJson(record.metadata || {}),
-  createdAt: timestampText(record.created_at_server) || text(record.created_at),
-})
+  }
+  const targetType = text(record.target_type)
+  const targetId = text(record.target_id)
+  const targetName = text(record.target_name)
+  const targetEmail = normalizeEmail(record.target_email)
+  const actionLabel = text(record.action_label) || formatActivityLogLabel(action, 'System activity')
+
+  return {
+    id: text(record.id),
+    action,
+    actionLabel,
+    description: text(record.description) || buildActivityLogDescriptionFallback({
+      action,
+      actionLabel,
+      targetType,
+      targetId,
+      targetName,
+      targetEmail,
+    }, actor),
+    targetType,
+    targetId,
+    targetName,
+    targetEmail,
+    status: text(record.status) || 'success',
+    source: text(record.source) || 'frontend',
+    actor,
+    metadata: cloneJson(record.metadata || {}),
+    createdAt: timestampText(record.created_at_server) || text(record.created_at),
+  }
+}
 
 const toApplicantProfileDocument = (profile, sourceCollection = APPLICANT_REGISTRATION_COLLECTION) => {
   const baseProfile = profile || {}
@@ -824,6 +925,9 @@ const toApplicantProfileDocument = (profile, sourceCollection = APPLICANT_REGIST
   const lastName = text(registration.last_name)
   const sortOrder = Number(baseProfile.sort_order ?? registration.sort_order)
   const normalizedSortOrder = Number.isFinite(sortOrder) ? sortOrder : undefined
+  const normalizedAdminDirectMessages = normalizeAdminDirectMessages(
+    baseProfile.admin_direct_messages || baseProfile.adminDirectMessages,
+  )
 
   return stripUndefined({
     id: uid,
@@ -850,6 +954,12 @@ const toApplicantProfileDocument = (profile, sourceCollection = APPLICANT_REGIST
       submitted_at: text(registration.submitted_at) || text(baseProfile.created_at),
       sort_order: normalizedSortOrder,
     }),
+    ...(normalizedAdminDirectMessages.length
+      ? {
+          admin_direct_messages: cloneJson(normalizedAdminDirectMessages),
+          adminDirectMessages: cloneJson(normalizedAdminDirectMessages),
+        }
+      : {}),
     ...(sourceCollection ? { __collection: sourceCollection } : {}),
   })
 }
@@ -1051,6 +1161,9 @@ const toApplicantRecord = (profile) => {
     admin_module_access_notices: normalizeAdminModuleAccessNotices(
       profile.admin_module_access_notices || profile.adminModuleAccessNotices,
     ),
+    admin_direct_messages: normalizeAdminDirectMessages(
+      profile.admin_direct_messages || profile.adminDirectMessages,
+    ),
     admin_applicant_module_access: normalizeAdminApplicantModuleAccess(
       profile.admin_applicant_module_access || profile.adminApplicantModuleAccess,
     ),
@@ -1102,6 +1215,9 @@ const toEmployerRecord = (profile) => {
     business_avatar_path: text(profile.business_avatar_path || profile.avatar_path),
     avatar_path: text(profile.avatar_path || profile.business_avatar_path),
     role: 'employer',
+    admin_direct_messages: normalizeAdminDirectMessages(
+      profile.admin_direct_messages || profile.adminDirectMessages,
+    ),
     user: {
       id: profile.id,
       email: normalizeEmail(profile.email),
@@ -1335,6 +1451,80 @@ const updateApplicantDocuments = async (applicantId, updates, options = {}) => {
   await batch.commit()
 
   return nextProfile
+}
+
+export const sendAdminDirectMessage = async (target = {}, payload = {}) => {
+  await waitForAuthReady()
+
+  const targetId = text(target?.id || target?.uid || target)
+  const targetRole = text(target?.role).toLowerCase()
+  const collectionHint = text(target?.profile_collection || target?.profileCollection || target?.__collection)
+  const normalizedTitle = text(payload?.title || 'Admin message')
+  const normalizedMessage = text(payload?.message || payload?.copy || payload?.body)
+
+  if (!targetId) {
+    throw new Error('The selected account is missing an ID.')
+  }
+
+  if (!normalizedMessage) {
+    throw new Error('Write a message before sending.')
+  }
+
+  const nextMessage = normalizeAdminDirectMessage({
+    id: `admin-message-${targetId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    kind: 'admin-direct-message',
+    section: 'admin-messages',
+    title: normalizedTitle,
+    message: normalizedMessage,
+    tone: text(payload?.tone || 'accent'),
+    senderName: text(payload?.senderName || payload?.sender_name),
+    senderEmail: normalizeEmail(payload?.senderEmail || payload?.sender_email),
+    senderRole: text(payload?.senderRole || payload?.sender_role || 'admin'),
+    createdAt: nowIso(),
+  })
+
+  if (!nextMessage) {
+    throw new Error('The admin message could not be prepared.')
+  }
+
+  const targetDocRefs = collectionHint === USERS_COLLECTION
+    ? [getUserDocRef(targetId)]
+    : targetRole === 'applicant'
+      ? [getApplicantRegistrationDocRef(targetId), getUserDocRef(targetId)]
+      : targetRole === 'employer'
+        ? [getEmployerDocRef(targetId), getUserDocRef(targetId)]
+        : [getUserDocRef(targetId)]
+
+  const snapshots = await Promise.all(targetDocRefs.map((docRef) => getDoc(docRef)))
+  const existingSnapshots = snapshots.filter((snapshot) => snapshot.exists())
+
+  if (!existingSnapshots.length) {
+    throw new Error('The selected account could not be found in Firestore.')
+  }
+
+  const mergedMessages = mergeAdminDirectMessages(
+    existingSnapshots.flatMap((snapshot) =>
+      normalizeAdminDirectMessages(
+        snapshot.data()?.admin_direct_messages || snapshot.data()?.adminDirectMessages,
+      )),
+    [nextMessage],
+  )
+
+  const batch = writeBatch(db)
+
+  targetDocRefs.forEach((docRef, index) => {
+    const isPrimaryTarget = index === 0
+    if (!isPrimaryTarget && !snapshots[index]?.exists()) return
+
+    batch.set(docRef, {
+      admin_direct_messages: cloneJson(mergedMessages),
+      adminDirectMessages: cloneJson(mergedMessages),
+    }, { merge: true })
+  })
+
+  await batch.commit()
+
+  return nextMessage
 }
 
 const deleteEmployerDocuments = async (employerId, dbInstance = db) => {
@@ -1991,6 +2181,11 @@ const buildAdminCreatedApplicantProfile = ({ uid, createdAt, form }) =>
     },
   })
 
+const normalizeAdminBusinessContactNumber = (value) =>
+  String(value || '')
+    .replace(/\D+/g, '')
+    .slice(0, 11)
+
 const buildAdminCreatedEmployerProfile = ({ uid, createdAt, form }) =>
   stripUndefined({
     id: uid,
@@ -2010,11 +2205,16 @@ const buildAdminCreatedEmployerProfile = ({ uid, createdAt, form }) =>
     company_name: text(form.companyName),
     company_category: text(form.companyIndustry),
     company_location: '',
-    company_contact_number: text(form.contactNumber),
+    company_contact_number: normalizeAdminBusinessContactNumber(form.contactNumber),
     company_organization_type: 'business',
     company_verification_document_1_path: '',
     company_verification_document_2_path: '',
     company_verification_document_3_path: '',
+    active_subscription_plan: 'free',
+    active_subscription_mode: 'none',
+    premium_trial_started_at: '',
+    premium_trial_consumed_at: '',
+    premium_paid_started_at: '',
   })
 
 const createTemporaryAdminAuth = async () => createTemporaryScopedFirebaseContext('admin-user-create')
@@ -2046,8 +2246,12 @@ export const createAdminManagedAccount = async (payload) => {
       throw new Error('Please complete all required applicant fields.')
     }
   } else if (accountType === 'business') {
+    const businessContactNumber = normalizeAdminBusinessContactNumber(payload?.contactNumber)
     if (!text(payload?.companyName) || !text(payload?.companyIndustry)) {
       throw new Error('Please complete the business company and industry fields.')
+    }
+    if (businessContactNumber.length !== 11) {
+      throw new Error('Business contact number must be exactly 11 digits.')
     }
   } else {
     throw new Error('Unsupported admin account type.')
@@ -2239,6 +2443,10 @@ export const registerAccount = async (formData, options = {}) => {
       storageInstance: tempStorage,
     })
     uploadedPaths = uploadedFiles.uploadedPaths
+    const employerOrganizationType =
+      role === 'employer'
+        ? normalizeEmployerOrganizationType(formData.get('companyOrganizationType'))
+        : ''
 
     let profile = stripUndefined({
       id: credential.user.uid,
@@ -2262,11 +2470,30 @@ export const registerAccount = async (formData, options = {}) => {
       company_category: role === 'employer' ? text(formData.get('companyCategory')) : undefined,
       company_location: role === 'employer' ? text(formData.get('companyLocation')) : undefined,
       company_contact_number: role === 'employer' ? text(formData.get('companyContactNumber')) : undefined,
-      company_organization_type:
-        role === 'employer' ? normalizeEmployerOrganizationType(formData.get('companyOrganizationType')) : undefined,
+      company_organization_type: role === 'employer' ? employerOrganizationType : undefined,
       company_verification_document_1_path: uploadedFiles.companyVerificationUrls[0] || '',
       company_verification_document_2_path: uploadedFiles.companyVerificationUrls[1] || '',
       company_verification_document_3_path: uploadedFiles.companyVerificationUrls[2] || '',
+      active_subscription_plan:
+        role === 'employer' && employerOrganizationType === 'business'
+          ? 'free'
+          : undefined,
+      active_subscription_mode:
+        role === 'employer' && employerOrganizationType === 'business'
+          ? 'none'
+          : undefined,
+      premium_trial_started_at:
+        role === 'employer' && employerOrganizationType === 'business'
+          ? ''
+          : undefined,
+      premium_trial_consumed_at:
+        role === 'employer' && employerOrganizationType === 'business'
+          ? ''
+          : undefined,
+      premium_paid_started_at:
+        role === 'employer' && employerOrganizationType === 'business'
+          ? ''
+          : undefined,
       applicant_registration:
         role === 'applicant'
           ? {
@@ -2803,7 +3030,7 @@ export const subscribeToActivityLogs = (handleNext, handleError) => {
       if (isClosed) return
 
       stopSnapshot = onSnapshot(
-        query(collection(db, ACTIVITY_LOGS_COLLECTION), orderBy('created_at_server', 'desc'), limit(50)),
+        query(collection(db, ACTIVITY_LOGS_COLLECTION), orderBy('created_at_server', 'desc'), limit(120)),
         (snapshot) => {
           handleNext(
             snapshot.docs.map((entry) => normalizeActivityLogRecord({

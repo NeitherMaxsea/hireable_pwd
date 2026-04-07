@@ -8,6 +8,7 @@ import { onAuthStateChanged, signOut } from 'firebase/auth'
 import { doc, getDoc } from 'firebase/firestore'
 import { useRouter } from 'vue-router'
 import AdminAllUser from '@/modules/Admin/admin-all-user.vue'
+import AdminApplicantStorage from '@/modules/Admin/admin-applicant-storage.vue'
 import AdminBusinessStorage from '@/modules/Admin/admin-business-storage.vue'
 import AdminCreatePlan from '@/modules/Admin/admin-create-plan.vue'
 import AdminCreateUser from '@/modules/Admin/admin-create-user.vue'
@@ -22,6 +23,8 @@ import AdminSidebar from '@/modules/Admin/admin_sidebar.vue'
 import logoPwd from '@/assets/logo-pwd.png'
 import pwdWordmark from '@/assets/pwdlogo.png'
 import {
+  recordSystemActivity,
+  sendAdminDirectMessage,
   subscribeToActivityLogs,
   subscribeToAdminProfiles,
   subscribeToBusinessWorkspaceUsers,
@@ -38,11 +41,12 @@ import { getAllJobs, getPublicJobs, subscribeToAllJobs, subscribeToPublicJobs } 
 import { auth, db } from '@/firebase'
 
 const router = useRouter()
-const primaryItems = [
+const LOGOUT_TOAST_KEY = 'showLoggedOutToast'
+const primaryItemDefinitions = [
   { key: 'dashboard', label: 'Dashboard', icon: 'bi bi-grid' },
 ]
 
-const userManagementItems = [
+const userManagementItemDefinitions = [
   { key: 'all-user', label: 'User Overview', icon: 'bi bi-people-fill' },
   { key: 'create-user', label: 'Create User', icon: 'bi bi-person-plus' },
   { key: 'applicant-list', label: 'Applicant List', icon: 'bi bi-person-lines-fill' },
@@ -51,32 +55,38 @@ const userManagementItems = [
   { key: 'history-delection-user', label: 'Delete User History', icon: 'bi bi-clock-history' },
 ]
 
-const paymentManagementItems = [
+const paymentManagementItemDefinitions = [
   { key: 'create-plan', label: 'Create Plan', icon: 'bi bi-plus-square' },
   { key: 'preview-plan', label: 'Preview Plan', icon: 'bi bi-card-checklist' },
   { key: 'payment-history', label: 'Payment History', icon: 'bi bi-credit-card-2-front' },
 ]
 
-const jobManagementItems = [
-  { key: 'all-job-post', label: 'All Job Post', icon: 'bi bi-card-list' },
-  { key: 'test-job-post', label: 'Test Job Post', icon: 'bi bi-bezier2' },
+const jobManagementItemDefinitions = [
+  { key: 'all-job-post', label: 'All Job Posts', icon: 'bi bi-card-list' },
+  { key: 'test-job-post', label: 'Test Job Posts', icon: 'bi bi-bezier2' },
 ]
 
-const storageManagementItems = [
+const storageManagementItemDefinitions = [
+  { key: 'applicant-storage', label: 'Applicant Storage', icon: 'bi bi-folder-check' },
   { key: 'business-storage', label: 'Business Storage', icon: 'bi bi-hdd-stack' },
 ]
 
-const secondaryItems = [
+const secondaryItemDefinitions = [
   { key: 'logs', label: 'Logs', icon: 'bi bi-journal-text' },
   { key: 'settings', label: 'Settings', icon: 'bi bi-gear' },
 ]
 
 const ADMIN_NOTIFICATION_STORAGE_KEY = 'adminDashboardNotifications'
 const ADMIN_SEEN_APPLICANT_IDS_STORAGE_KEY = 'adminSeenApplicantIds'
+const ADMIN_SEEN_EMPLOYER_IDS_STORAGE_KEY = 'adminSeenEmployerIds'
+const ADMIN_SEEN_PAYMENT_ENTRY_IDS_STORAGE_KEY = 'adminSeenPaymentEntryIds'
+const ADMIN_SEEN_JOB_POST_IDS_STORAGE_KEY = 'adminSeenJobPostIds'
+const ADMIN_SEEN_ACTIVITY_LOG_IDS_STORAGE_KEY = 'adminSeenActivityLogIds'
 const ADMIN_NOTIFICATION_LIMIT = 12
 const ADMIN_PAYMENT_HISTORY_STORAGE_KEY = 'adminPaymentHistory'
 const ADMIN_SIDEBAR_DROPDOWNS_STORAGE_KEY = 'adminSidebarDropdownState'
 const ADMIN_SETTINGS_STORAGE_KEY = 'adminDashboardSettings'
+const ADMIN_RECENT_RECORD_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
 const ADMIN_THEME_OPTIONS = [
   {
     value: 'sage',
@@ -97,10 +107,42 @@ const ADMIN_THEME_OPTIONS = [
     preview: 'linear-gradient(135deg, #c86a27 0%, #f2c36b 100%)',
   },
 ]
+const ADMIN_DOCUMENT_THEME_VARIABLE_KEYS = [
+  '--admin-theme-accent',
+  '--admin-theme-accent-soft',
+  '--admin-theme-accent-border',
+  '--admin-theme-shell-glow',
+  '--admin-bg-shell-start',
+  '--admin-bg-shell-mid',
+  '--admin-bg-shell-end',
+  '--admin-bg-content-glow',
+  '--admin-bg-content-top',
+  '--admin-bg-content-bottom',
+  '--admin-bg-surface',
+  '--admin-bg-surface-muted',
+  '--admin-bg-surface-elevated',
+  '--admin-bg-surface-inset',
+  '--admin-bg-hover',
+  '--admin-bg-hover-strong',
+  '--admin-bg-overlay',
+  '--admin-text-primary',
+  '--admin-text-secondary',
+  '--admin-text-muted',
+  '--admin-border-color',
+  '--admin-border-strong',
+  '--admin-shadow-soft',
+  '--admin-shadow-strong',
+  '--admin-input-bg',
+  '--admin-input-border',
+  '--admin-input-text',
+  '--admin-input-placeholder',
+  '--admin-icon-color',
+]
 
 const profileMenuOpen = ref(false)
 const notificationMenuOpen = ref(false)
 const settingsModalOpen = ref(false)
+const adminMessageModalOpen = ref(false)
 const settingsActivePanel = ref('preferences')
 const userManagementOpen = ref(false)
 const paymentManagementOpen = ref(false)
@@ -125,14 +167,26 @@ const activityLogs = ref([])
 const businessWorkspaceUsers = ref({})
 const adminNotifications = ref([])
 const adminToast = ref(null)
+const selectedAdminMessageRecipient = ref(null)
+const isAdminMessageSubmitting = ref(false)
+const adminDirectMessageForm = ref({
+  title: '',
+  message: '',
+})
 const publicJobs = ref([])
 const adminJobPosts = ref([])
 const adminPaymentHistory = ref([])
 const adminPlanCatalog = ref([])
+const seenApplicantIds = ref([])
+const seenEmployerIds = ref([])
+const seenPaymentEntryIds = ref([])
+const seenJobPostIds = ref([])
+const seenActivityLogIds = ref([])
 const isInitialAdminLoading = ref(true)
 const settingsPreferences = ref({
   compactCards: false,
   reduceMotion: false,
+  darkMode: false,
 })
 const selectedAdminTheme = ref('sage')
 let stopAuthWatcher = () => {}
@@ -144,19 +198,29 @@ let stopPublicJobs = () => {}
 let stopAllJobs = () => {}
 let stopBusinessPaymentHistory = () => {}
 let notificationToastTimer = 0
-let seenApplicantIds = new Set()
 let hasHydratedAdminNotificationState = false
 let shouldSeedSeenApplicantIdsOnFirstSnapshot = true
+let shouldSeedSeenEmployerIdsOnFirstSnapshot = true
+let shouldSeedSeenPaymentEntryIdsOnFirstSnapshot = true
+let shouldSeedSeenJobPostIdsOnFirstSnapshot = true
+let shouldSeedSeenActivityLogIdsOnFirstSnapshot = true
 let adminSessionStartedAt = Date.now()
 let usePublicJobFallbackForAdminViews = false
 const workspaceUserDirectoryStops = new Map()
+const ADMIN_DIRECT_MESSAGE_TITLE_LIMIT = 80
+const ADMIN_DIRECT_MESSAGE_BODY_LIMIT = 500
 
 const isAnyAdminLoading = computed(() => isInitialAdminLoading.value)
+const adminDirectMessageBodyLength = computed(() => String(adminDirectMessageForm.value.message || '').length)
+const canSubmitAdminDirectMessage = computed(() =>
+  String(adminDirectMessageForm.value.message || '').trim().length > 0
+    && adminDirectMessageBodyLength.value <= ADMIN_DIRECT_MESSAGE_BODY_LIMIT,
+)
 
-watch([isAnyAdminLoading, settingsModalOpen], ([isLoading, isSettingsOpen]) => {
+watch([isAnyAdminLoading, settingsModalOpen, adminMessageModalOpen], ([isLoading, isSettingsOpen, isMessageOpen]) => {
   if (typeof document === 'undefined') return
 
-  document.body.style.overflow = isLoading || isSettingsOpen ? 'hidden' : ''
+  document.body.style.overflow = isLoading || isSettingsOpen || isMessageOpen ? 'hidden' : ''
 })
 
 watch(settingsPreferences, () => {
@@ -171,6 +235,28 @@ watch(
   () => (Array.isArray(adminProfiles.value.employers) ? adminProfiles.value.employers : []).map((entry) => String(entry?.id || '').trim()).sort().join('|'),
   () => {
     syncWorkspaceUserSubscriptions()
+    reconcileEmployerSidebarState(adminProfiles.value.employers)
+  },
+)
+
+watch(
+  () => adminPaymentHistory.value.map((entry) => String(entry?.id || '').trim()).sort().join('|'),
+  () => {
+    reconcilePaymentHistorySidebarState(adminPaymentHistory.value)
+  },
+)
+
+watch(
+  () => adminJobPosts.value.map((entry) => String(entry?.id || '').trim()).sort().join('|'),
+  () => {
+    reconcileAdminJobSidebarState(adminJobPosts.value)
+  },
+)
+
+watch(
+  () => activityLogs.value.map((entry) => String(entry?.id || '').trim()).sort().join('|'),
+  () => {
+    reconcileAdminActivityLogSidebarState(activityLogs.value)
   },
 )
 
@@ -181,6 +267,15 @@ const allAdminProfiles = computed(() => [
 
 const normalizeStatusValue = (value) => String(value || '').trim().toLowerCase()
 const normalizeStatusClass = (value) => normalizeStatusValue(value).replace(/[^a-z0-9]+/g, '-')
+const normalizeIdList = (values = []) => [
+  ...new Set(
+    (Array.isArray(values) ? values : [])
+      .map((value) => String(value || '').trim())
+      .filter(Boolean),
+  ),
+]
+const areIdListsEqual = (left = [], right = []) =>
+  left.length === right.length && left.every((value, index) => value === right[index])
 
 const initialsFromName = (value, fallback = 'AC') =>
   String(value || '')
@@ -283,6 +378,30 @@ const parseRecordDate = (value) => {
   const nextDate = new Date(value)
   return Number.isNaN(nextDate.getTime()) ? null : nextDate
 }
+
+const isRecentRecordDate = (value) => {
+  const parsed = parseRecordDate(value)
+  if (!parsed) return false
+
+  const diffMs = Date.now() - parsed.getTime()
+  return diffMs >= 0 && diffMs <= ADMIN_RECENT_RECORD_WINDOW_MS
+}
+
+const resolvePaymentHistoryRecordDate = (entry = {}) =>
+  parseRecordDate(
+    entry?.createdAt
+    || entry?.updatedAt
+    || `${entry?.date || ''} ${entry?.time || ''}`.trim()
+    || entry?.date
+    || '',
+  )
+
+const isRecentPaymentHistoryRecord = (entry = {}) => {
+  const parsed = resolvePaymentHistoryRecordDate(entry)
+  return parsed ? isRecentRecordDate(parsed) : false
+}
+
+const isRecentActivityLogRecord = (entry = {}) => isRecentRecordDate(entry?.createdAt)
 
 const buildSmoothLinePath = (points) => {
   if (!points.length) return ''
@@ -853,8 +972,9 @@ const currentViewTitle = computed(() => {
   if (activeAdminView.value === 'create-plan') return 'Create Plan'
   if (activeAdminView.value === 'preview-plan') return 'Preview Plan'
   if (activeAdminView.value === 'payment-history') return 'Payment History'
-  if (activeAdminView.value === 'all-job-post') return 'All Job Post'
-  if (activeAdminView.value === 'test-job-post') return 'Test Job Post'
+  if (activeAdminView.value === 'all-job-post') return 'All Job Posts'
+  if (activeAdminView.value === 'test-job-post') return 'Test Job Posts'
+  if (activeAdminView.value === 'applicant-storage') return 'Applicant Storage'
   if (activeAdminView.value === 'business-storage') return 'Business Storage'
   return 'Dashboard'
 })
@@ -868,9 +988,9 @@ const currentViewParent = computed(() =>
       ? 'Subscription Management'
       : ['all-job-post', 'test-job-post'].includes(activeAdminView.value)
         ? 'Job Management'
-      : ['business-storage'].includes(activeAdminView.value)
-        ? 'Storage Management'
-      : 'Dashboard',
+        : ['applicant-storage', 'business-storage'].includes(activeAdminView.value)
+          ? 'Storage Management'
+          : 'Dashboard',
 )
 
 const currentViewSubtitle = computed(() => {
@@ -886,7 +1006,8 @@ const currentViewSubtitle = computed(() => {
   if (activeAdminView.value === 'payment-history') return 'Subscription payment history tools will appear here'
   if (activeAdminView.value === 'all-job-post') return 'Monitor all job posts created across business workspaces'
   if (activeAdminView.value === 'test-job-post') return 'Review test, sample, demo, and mock job posts'
-  if (activeAdminView.value === 'business-storage') return 'Business verification file storage overview'
+  if (activeAdminView.value === 'applicant-storage') return 'Review applicant-uploaded files like face verification, PWD IDs, and resume storage'
+  if (activeAdminView.value === 'business-storage') return 'Review business verification documents and storage coverage by account'
   return 'Admin navigation'
 })
 
@@ -894,35 +1015,138 @@ const selectedThemeOption = computed(() =>
   ADMIN_THEME_OPTIONS.find((option) => option.value === selectedAdminTheme.value) || ADMIN_THEME_OPTIONS[0],
 )
 
+const isDarkAdminMode = computed(() => settingsPreferences.value.darkMode === true)
+
 const adminShellStyle = computed(() => {
   const theme = selectedThemeOption.value
   const paletteByTheme = {
     sage: {
-      accent: '#2f6a49',
-      accentSoft: 'rgba(47, 106, 73, 0.12)',
-      accentBorder: 'rgba(47, 106, 73, 0.2)',
-      shellGlow: 'radial-gradient(circle at top right, rgba(104, 173, 126, 0.16), transparent 32%)',
+      accentLight: '#2f6a49',
+      accentDark: '#67d39f',
+      accentSoftLight: 'rgba(47, 106, 73, 0.12)',
+      accentSoftDark: 'rgba(103, 211, 159, 0.16)',
+      accentBorderLight: 'rgba(47, 106, 73, 0.2)',
+      accentBorderDark: 'rgba(103, 211, 159, 0.24)',
+      shellGlowLight: 'radial-gradient(circle at top right, rgba(104, 173, 126, 0.16), transparent 32%)',
+      shellGlowDark: 'radial-gradient(circle at top right, rgba(78, 192, 139, 0.18), transparent 34%)',
     },
     ocean: {
-      accent: '#355aa8',
-      accentSoft: 'rgba(53, 90, 168, 0.12)',
-      accentBorder: 'rgba(53, 90, 168, 0.2)',
-      shellGlow: 'radial-gradient(circle at top right, rgba(109, 150, 230, 0.18), transparent 34%)',
+      accentLight: '#355aa8',
+      accentDark: '#85b4ff',
+      accentSoftLight: 'rgba(53, 90, 168, 0.12)',
+      accentSoftDark: 'rgba(133, 180, 255, 0.18)',
+      accentBorderLight: 'rgba(53, 90, 168, 0.2)',
+      accentBorderDark: 'rgba(133, 180, 255, 0.26)',
+      shellGlowLight: 'radial-gradient(circle at top right, rgba(109, 150, 230, 0.18), transparent 34%)',
+      shellGlowDark: 'radial-gradient(circle at top right, rgba(108, 158, 255, 0.2), transparent 34%)',
     },
     sunrise: {
-      accent: '#b86528',
-      accentSoft: 'rgba(184, 101, 40, 0.12)',
-      accentBorder: 'rgba(184, 101, 40, 0.22)',
-      shellGlow: 'radial-gradient(circle at top right, rgba(233, 171, 82, 0.2), transparent 32%)',
+      accentLight: '#b86528',
+      accentDark: '#f2be73',
+      accentSoftLight: 'rgba(184, 101, 40, 0.12)',
+      accentSoftDark: 'rgba(242, 190, 115, 0.18)',
+      accentBorderLight: 'rgba(184, 101, 40, 0.22)',
+      accentBorderDark: 'rgba(242, 190, 115, 0.28)',
+      shellGlowLight: 'radial-gradient(circle at top right, rgba(233, 171, 82, 0.2), transparent 32%)',
+      shellGlowDark: 'radial-gradient(circle at top right, rgba(255, 191, 94, 0.18), transparent 34%)',
     },
   }
   const palette = paletteByTheme[theme.value] || paletteByTheme.sage
+  const isDarkMode = isDarkAdminMode.value
+  const surfacePalette = isDarkMode
+    ? {
+        accent: palette.accentDark,
+        accentSoft: palette.accentSoftDark,
+        accentBorder: palette.accentBorderDark,
+        shellGlow: palette.shellGlowDark,
+        shellStart: '#08111b',
+        shellMid: '#0b1320',
+        shellEnd: '#111827',
+        contentGlow: 'rgba(103, 211, 159, 0.12)',
+        contentTop: 'rgba(9, 15, 27, 0.96)',
+        contentBottom: 'rgba(4, 8, 18, 0.98)',
+        surface: 'rgba(15, 23, 42, 0.92)',
+        surfaceMuted: 'rgba(30, 41, 59, 0.86)',
+        surfaceElevated: 'rgba(15, 23, 42, 0.9)',
+        surfaceInset: 'rgba(248, 252, 249, 0.08)',
+        hover: 'rgba(51, 65, 85, 0.48)',
+        hoverStrong: 'rgba(30, 41, 59, 0.82)',
+        overlay: 'rgba(2, 6, 23, 0.72)',
+        textPrimary: '#f8fafc',
+        textSecondary: '#cbd5e1',
+        textMuted: '#94a3b8',
+        border: 'rgba(148, 163, 184, 0.18)',
+        borderStrong: 'rgba(148, 163, 184, 0.28)',
+        shadowSoft: '0 20px 40px rgba(2, 6, 23, 0.42)',
+        shadowStrong: '0 24px 56px rgba(2, 6, 23, 0.56)',
+        inputBg: 'rgba(15, 23, 42, 0.9)',
+        inputBorder: 'rgba(148, 163, 184, 0.22)',
+        inputText: '#f8fafc',
+        inputPlaceholder: '#94a3b8',
+        icon: '#dbe4f0',
+      }
+    : {
+        accent: palette.accentLight,
+        accentSoft: palette.accentSoftLight,
+        accentBorder: palette.accentBorderLight,
+        shellGlow: palette.shellGlowLight,
+        shellStart: '#eef8f2',
+        shellMid: '#f8fcf9',
+        shellEnd: '#ffffff',
+        contentGlow: 'rgba(46, 154, 104, 0.08)',
+        contentTop: 'rgba(248, 252, 249, 0.92)',
+        contentBottom: 'rgba(255, 255, 255, 0.96)',
+        surface: '#ffffff',
+        surfaceMuted: '#f8fafc',
+        surfaceElevated: 'rgba(255, 255, 255, 0.94)',
+        surfaceInset: 'rgba(248, 252, 249, 0.7)',
+        hover: 'rgba(241, 245, 249, 0.96)',
+        hoverStrong: 'rgba(240, 247, 243, 0.95)',
+        overlay: 'rgba(15, 23, 42, 0.24)',
+        textPrimary: '#172033',
+        textSecondary: '#64748b',
+        textMuted: '#8a93a5',
+        border: 'rgba(223, 227, 234, 0.96)',
+        borderStrong: 'rgba(213, 226, 219, 0.92)',
+        shadowSoft: '0 20px 40px rgba(15, 23, 42, 0.16)',
+        shadowStrong: '0 24px 56px rgba(15, 23, 42, 0.18)',
+        inputBg: '#ffffff',
+        inputBorder: 'rgba(223, 227, 234, 0.96)',
+        inputText: '#172033',
+        inputPlaceholder: '#8a93a5',
+        icon: '#677188',
+      }
 
   return {
-    '--admin-theme-accent': palette.accent,
-    '--admin-theme-accent-soft': palette.accentSoft,
-    '--admin-theme-accent-border': palette.accentBorder,
-    '--admin-theme-shell-glow': palette.shellGlow,
+    '--admin-theme-accent': surfacePalette.accent,
+    '--admin-theme-accent-soft': surfacePalette.accentSoft,
+    '--admin-theme-accent-border': surfacePalette.accentBorder,
+    '--admin-theme-shell-glow': surfacePalette.shellGlow,
+    '--admin-bg-shell-start': surfacePalette.shellStart,
+    '--admin-bg-shell-mid': surfacePalette.shellMid,
+    '--admin-bg-shell-end': surfacePalette.shellEnd,
+    '--admin-bg-content-glow': surfacePalette.contentGlow,
+    '--admin-bg-content-top': surfacePalette.contentTop,
+    '--admin-bg-content-bottom': surfacePalette.contentBottom,
+    '--admin-bg-surface': surfacePalette.surface,
+    '--admin-bg-surface-muted': surfacePalette.surfaceMuted,
+    '--admin-bg-surface-elevated': surfacePalette.surfaceElevated,
+    '--admin-bg-surface-inset': surfacePalette.surfaceInset,
+    '--admin-bg-hover': surfacePalette.hover,
+    '--admin-bg-hover-strong': surfacePalette.hoverStrong,
+    '--admin-bg-overlay': surfacePalette.overlay,
+    '--admin-text-primary': surfacePalette.textPrimary,
+    '--admin-text-secondary': surfacePalette.textSecondary,
+    '--admin-text-muted': surfacePalette.textMuted,
+    '--admin-border-color': surfacePalette.border,
+    '--admin-border-strong': surfacePalette.borderStrong,
+    '--admin-shadow-soft': surfacePalette.shadowSoft,
+    '--admin-shadow-strong': surfacePalette.shadowStrong,
+    '--admin-input-bg': surfacePalette.inputBg,
+    '--admin-input-border': surfacePalette.inputBorder,
+    '--admin-input-text': surfacePalette.inputText,
+    '--admin-input-placeholder': surfacePalette.inputPlaceholder,
+    '--admin-icon-color': surfacePalette.icon,
     '--admin-density-gap': settingsPreferences.value.compactCards ? '0.7rem' : '1rem',
     '--admin-density-page-padding': settingsPreferences.value.compactCards ? '1rem 1.15rem 0.85rem' : '1.25rem 1.5rem 1rem',
     '--admin-density-panel-padding': settingsPreferences.value.compactCards ? '0.9rem' : '1.08rem',
@@ -936,6 +1160,14 @@ const adminShellStyle = computed(() => {
   }
 })
 
+watch(
+  adminShellStyle,
+  (nextStyle) => {
+    syncAdminDocumentTheme(nextStyle)
+  },
+  { immediate: true },
+)
+
 const unreadNotificationCount = computed(() =>
   adminNotifications.value.filter((notification) => notification.read !== true).length,
 )
@@ -948,6 +1180,158 @@ const formatNotificationBadge = (value) => {
   const count = Number(value) || 0
   return count > 99 ? '99+' : String(count)
 }
+
+const recentApplicantIds = computed(() =>
+  normalizeIdList(
+    (Array.isArray(adminProfiles.value.applicants) ? adminProfiles.value.applicants : [])
+      .filter((record) => isRecentRecordDate(record?.created_at || record?.createdAt || record?.submitted_at))
+      .map((record) => record?.id),
+  ),
+)
+
+const recentEmployerIds = computed(() =>
+  normalizeIdList(
+    (Array.isArray(adminProfiles.value.employers) ? adminProfiles.value.employers : [])
+      .filter((record) => isRecentRecordDate(record?.created_at || record?.createdAt || record?.submitted_at))
+      .map((record) => record?.id),
+  ),
+)
+
+const recentAdminUserKeys = computed(() => [
+  ...recentApplicantIds.value.map((id) => `applicant:${id}`),
+  ...recentEmployerIds.value.map((id) => `employer:${id}`),
+])
+
+const recentAdminJobIds = computed(() =>
+  normalizeIdList(
+    (Array.isArray(adminJobPosts.value) ? adminJobPosts.value : [])
+      .filter((record) => isRecentRecordDate(record?.createdAt || record?.created_at || record?.updatedAt || record?.updated_at))
+      .map((record) => record?.id),
+  ),
+)
+
+const applicantListSidebarCount = computed(() => {
+  if (activeAdminView.value === 'applicant-list') return 0
+
+  const seenIds = new Set(seenApplicantIds.value)
+  return (Array.isArray(adminProfiles.value.applicants) ? adminProfiles.value.applicants : [])
+    .filter((record) => {
+      const applicantId = String(record?.id || '').trim()
+      return applicantId
+        && normalizeStatusValue(record?.approval_status) === 'pending'
+        && !seenIds.has(applicantId)
+    })
+    .length
+})
+
+const businessListSidebarCount = computed(() => {
+  if (['employee-list', 'all-user'].includes(activeAdminView.value)) return 0
+  const seenIds = new Set(seenEmployerIds.value)
+  return (Array.isArray(adminProfiles.value.employers) ? adminProfiles.value.employers : [])
+    .filter((record) => {
+      const employerId = String(record?.id || '').trim()
+      return employerId && !seenIds.has(employerId)
+    })
+    .length
+})
+
+const paymentHistorySidebarCount = computed(() => {
+  if (activeAdminView.value === 'payment-history') return 0
+  const seenIds = new Set(seenPaymentEntryIds.value)
+  return adminPaymentHistory.value
+    .filter((entry) => {
+      const entryId = String(entry?.id || '').trim()
+      return entryId && !seenIds.has(entryId)
+    })
+    .length
+})
+
+const allJobPostSidebarCount = computed(() => {
+  if (['all-job-post', 'test-job-post'].includes(activeAdminView.value)) return 0
+  const seenIds = new Set(seenJobPostIds.value)
+  return (Array.isArray(adminJobPosts.value) ? adminJobPosts.value : [])
+    .filter((entry) => {
+      const jobId = String(entry?.id || '').trim()
+      return jobId && !seenIds.has(jobId)
+    })
+    .length
+})
+
+const adminLogsSidebarCount = computed(() => {
+  if (activeAdminView.value === 'logs') return 0
+  const seenIds = new Set(seenActivityLogIds.value)
+  return (Array.isArray(activityLogs.value) ? activityLogs.value : [])
+    .filter((entry) => {
+      const logId = String(entry?.id || '').trim()
+      return logId && !seenIds.has(logId)
+    })
+    .length
+})
+
+const applicantListSidebarBadge = computed(() =>
+  applicantListSidebarCount.value > 0 ? formatNotificationBadge(applicantListSidebarCount.value) : '',
+)
+
+const businessListSidebarBadge = computed(() =>
+  businessListSidebarCount.value > 0 ? formatNotificationBadge(businessListSidebarCount.value) : '',
+)
+
+const userManagementSidebarBadge = computed(() => {
+  const total = applicantListSidebarCount.value + businessListSidebarCount.value
+  return total > 0 ? formatNotificationBadge(total) : ''
+})
+
+const subscriptionManagementSidebarBadge = computed(() =>
+  paymentHistorySidebarCount.value > 0
+    ? formatNotificationBadge(paymentHistorySidebarCount.value)
+    : '',
+)
+
+const jobManagementSidebarBadge = computed(() =>
+  allJobPostSidebarCount.value > 0 ? formatNotificationBadge(allJobPostSidebarCount.value) : '',
+)
+
+const adminLogsSidebarBadge = computed(() =>
+  adminLogsSidebarCount.value > 0 ? formatNotificationBadge(adminLogsSidebarCount.value) : '',
+)
+
+const primaryItems = computed(() => primaryItemDefinitions.map((item) => ({ ...item })))
+
+const userManagementItems = computed(() =>
+  userManagementItemDefinitions.map((item) => ({
+    ...item,
+    badge: item.key === 'applicant-list'
+      ? applicantListSidebarBadge.value
+      : item.key === 'employee-list'
+        ? businessListSidebarBadge.value
+        : '',
+  })),
+)
+
+const paymentManagementItems = computed(() =>
+  paymentManagementItemDefinitions.map((item) => ({
+    ...item,
+    badge: item.key === 'payment-history' ? subscriptionManagementSidebarBadge.value : '',
+  })),
+)
+
+const jobManagementItems = computed(() =>
+  jobManagementItemDefinitions.map((item) => ({
+    ...item,
+    badge: item.key === 'all-job-post' ? jobManagementSidebarBadge.value : '',
+  })),
+)
+
+const storageManagementItems = computed(() =>
+  storageManagementItemDefinitions.map((item) => ({ ...item })),
+)
+
+const secondaryItems = computed(() =>
+  secondaryItemDefinitions.map((item) => ({
+    ...item,
+    badge: item.key === 'logs' ? adminLogsSidebarBadge.value : item.badge || '',
+  })),
+)
 
 const topLinks = computed(() => [
   { label: 'Inbox', icon: 'bi bi-inbox', badge: '12' },
@@ -1217,29 +1601,133 @@ const filteredPaymentHistoryEntries = computed(() => {
   })
 })
 
+const formatAdminActivityLabel = (value, fallback = 'Activity') =>
+  String(value || '')
+    .trim()
+    .replace(/[._-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase()) || fallback
+
+const formatAdminActivityStatusLabel = (value) => {
+  const normalized = String(value || 'success').trim().toLowerCase()
+  if (normalized === 'error') return 'Error'
+  if (normalized === 'warning') return 'Warning'
+  if (normalized === 'pending') return 'Pending'
+  return formatAdminActivityLabel(normalized || 'success', 'Success')
+}
+
+const formatAdminActivityDateTime = (value) => {
+  const parsed = parseRecordDate(value)
+  if (!parsed) return 'No timestamp'
+
+  return parsed.toLocaleString('en-US', {
+    month: 'short',
+    day: '2-digit',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+
+const formatAdminActivityRelativeTime = (value) => {
+  const parsed = parseRecordDate(value)
+  if (!parsed) return 'No timestamp'
+
+  const diffMs = Date.now() - parsed.getTime()
+  if (diffMs < 60 * 1000) return 'Just now'
+  if (diffMs < 60 * 60 * 1000) {
+    const minutes = Math.max(1, Math.floor(diffMs / (60 * 1000)))
+    return `${minutes} min${minutes === 1 ? '' : 's'} ago`
+  }
+  if (diffMs < 24 * 60 * 60 * 1000) {
+    const hours = Math.max(1, Math.floor(diffMs / (60 * 60 * 1000)))
+    return `${hours} hr${hours === 1 ? '' : 's'} ago`
+  }
+  if (diffMs < 7 * 24 * 60 * 60 * 1000) {
+    const days = Math.max(1, Math.floor(diffMs / (24 * 60 * 60 * 1000)))
+    return `${days} day${days === 1 ? '' : 's'} ago`
+  }
+  if (diffMs < 30 * 24 * 60 * 60 * 1000) {
+    const weeks = Math.max(1, Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000)))
+    return `${weeks} wk${weeks === 1 ? '' : 's'} ago`
+  }
+  if (diffMs < 365 * 24 * 60 * 60 * 1000) {
+    const months = Math.max(1, Math.floor(diffMs / (30 * 24 * 60 * 60 * 1000)))
+    return `${months} mo${months === 1 ? '' : 's'} ago`
+  }
+
+  const years = Math.max(1, Math.floor(diffMs / (365 * 24 * 60 * 60 * 1000)))
+  return `${years} yr${years === 1 ? '' : 's'} ago`
+}
+
+const formatAdminActivityMetadataValue = (value) => {
+  if (Array.isArray(value)) return `${value.length} item${value.length === 1 ? '' : 's'}`
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No'
+  const normalized = String(value || '').trim()
+  return normalized.length > 64 ? `${normalized.slice(0, 61)}...` : normalized
+}
+
+const buildAdminActivityMetadataSummary = (metadata = {}) => {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return ''
+
+  return Object.entries(metadata)
+    .filter(([, value]) => {
+      if (Array.isArray(value)) return value.length > 0
+      return value !== undefined && value !== null && String(value).trim() !== ''
+    })
+    .slice(0, 3)
+    .map(([key, value]) => `${formatAdminActivityLabel(key, 'Detail')}: ${formatAdminActivityMetadataValue(value)}`)
+    .join(' • ')
+}
+
+const buildAdminActivityActorLabel = (entry = {}) => {
+  const actorName = String(entry?.actor?.name || entry?.actor?.email || entry?.actor?.uid || '').trim()
+  const actorRole = formatAdminActivityLabel(entry?.actor?.role, '')
+  if (!actorName) return 'System'
+  return actorRole ? `${actorName} (${actorRole})` : actorName
+}
+
+const buildAdminActivityTargetLabel = (entry = {}) => {
+  const targetBase = String(entry?.targetName || entry?.targetEmail || entry?.targetId || '').trim()
+  const targetType = formatAdminActivityLabel(entry?.targetType, 'System')
+
+  if (targetBase && targetType) return `${targetBase} (${targetType})`
+  return targetBase || targetType
+}
+
 const adminActivityLogs = computed(() => {
   return activityLogs.value
     .map((entry) => {
-      const actorName = String(entry?.actor?.name || entry?.actor?.email || 'System').trim() || 'System'
-      const meta = String(entry?.targetType || entry?.actionLabel || 'Activity')
-        .replace(/_/g, ' ')
-        .trim()
+      const actionKey = String(entry?.action || '').trim()
+      const meta = formatAdminActivityLabel(entry?.targetType || entry?.actionLabel || 'Activity')
+      const loweredActionKey = actionKey.toLowerCase()
+      const loweredMeta = meta.toLowerCase()
       const tone = String(entry?.status || '').toLowerCase() === 'error'
         ? 'danger'
-        : meta.toLowerCase().includes('plan') || meta.toLowerCase().includes('subscription')
+        : loweredActionKey.includes('delete') || loweredMeta.includes('deleted')
+          ? 'danger'
+          : loweredActionKey.includes('plan') || loweredActionKey.includes('payment') || loweredMeta.includes('plan') || loweredMeta.includes('subscription')
           ? 'payment'
           : 'notification'
 
       return {
         id: entry.id,
         title: String(entry.actionLabel || 'System activity').trim() || 'System activity',
-        description: String(entry.description || `${actorName} performed ${entry.action || 'an action'}.`).trim(),
+        description: String(entry.description || 'No activity description provided.').trim() || 'No activity description provided.',
         meta: meta || 'Activity',
-        createdAt: String(entry.createdAt || '').trim(),
+        actorLabel: buildAdminActivityActorLabel(entry),
+        targetLabel: buildAdminActivityTargetLabel(entry),
+        sourceLabel: formatAdminActivityLabel(entry.source || 'frontend', 'Frontend'),
+        statusLabel: formatAdminActivityStatusLabel(entry.status),
+        eventLabel: actionKey || 'system.activity',
+        metadataSummary: buildAdminActivityMetadataSummary(entry.metadata),
+        createdAt: entry.createdAt,
+        createdAtLabel: formatAdminActivityDateTime(entry.createdAt),
+        createdAtRelative: formatAdminActivityRelativeTime(entry.createdAt),
         tone,
       }
     })
-    .slice(0, 24)
+    .slice(0, 40)
 })
 
 const profileName = computed(() => {
@@ -1272,6 +1760,98 @@ const closeNotificationMenu = () => {
 
 const closeSettingsModal = () => {
   settingsModalOpen.value = false
+}
+
+const getAdminMessageRecipientRoleLabel = (recipient = {}) => {
+  const normalizedRole = String(recipient?.role || '').trim().toLowerCase()
+  if (normalizedRole === 'applicant') return 'Applicant'
+  if (normalizedRole === 'employer') return 'Business'
+  return 'User'
+}
+
+const resetAdminMessageComposer = () => {
+  selectedAdminMessageRecipient.value = null
+  adminDirectMessageForm.value = {
+    title: '',
+    message: '',
+  }
+}
+
+const closeAdminMessageModal = () => {
+  if (isAdminMessageSubmitting.value) return
+  adminMessageModalOpen.value = false
+  resetAdminMessageComposer()
+}
+
+const openAdminMessageModal = (recipient = {}) => {
+  const normalizedRecipient = recipient && typeof recipient === 'object' ? recipient : {}
+  const recipientId = String(normalizedRecipient?.id || '').trim()
+  const recipientName = String(normalizedRecipient?.name || '').trim()
+
+  if (!recipientId || !recipientName) {
+    showAdminToast('That account could not be opened for messaging.', 'error')
+    return
+  }
+
+  selectedAdminMessageRecipient.value = normalizedRecipient
+  adminDirectMessageForm.value = {
+    title: `Message for ${recipientName}`,
+    message: '',
+  }
+  adminMessageModalOpen.value = true
+}
+
+const submitAdminDirectMessage = async () => {
+  const recipient = selectedAdminMessageRecipient.value || {}
+  const recipientId = String(recipient?.id || '').trim()
+  const recipientName = String(recipient?.name || '').trim() || 'the selected user'
+  const messageTitle = String(adminDirectMessageForm.value.title || '').trim().slice(0, ADMIN_DIRECT_MESSAGE_TITLE_LIMIT)
+  const messageBody = String(adminDirectMessageForm.value.message || '').trim().slice(0, ADMIN_DIRECT_MESSAGE_BODY_LIMIT)
+
+  if (!recipientId) {
+    showAdminToast('That account is missing a valid ID.', 'error')
+    return
+  }
+
+  if (!messageBody) {
+    showAdminToast('Write a message before sending.', 'error')
+    return
+  }
+
+  isAdminMessageSubmitting.value = true
+
+  try {
+    await sendAdminDirectMessage(recipient, {
+      title: messageTitle || 'Admin message',
+      message: messageBody,
+      tone: 'accent',
+      senderName: profileName.value,
+      senderEmail: profileEmail.value,
+      senderRole: String(currentUser.value?.role || 'admin').trim() || 'admin',
+    })
+
+    await recordSystemActivity({
+      action: 'account.admin.message',
+      actionLabel: 'Admin message sent',
+      description: `${profileName.value} sent a direct message to ${recipientName}.`,
+      targetType: String(recipient?.role || 'user').trim() || 'user',
+      targetId: recipientId,
+      targetName: recipientName,
+      targetEmail: String(recipient?.email || '').trim(),
+      metadata: {
+        title: messageTitle || 'Admin message',
+        delivery: 'firebase-profile-notification',
+      },
+    }, currentUser.value)
+
+    showAdminToast(`Message sent to ${recipientName}.`, 'success')
+    adminMessageModalOpen.value = false
+    resetAdminMessageComposer()
+  } catch (error) {
+    showAdminToast(error instanceof Error ? error.message : 'The message could not be sent right now.', 'error')
+  } finally {
+    isAdminMessageSubmitting.value = false
+  }
 }
 
 const clearAdminToastTimer = () => {
@@ -1353,11 +1933,12 @@ const handleAdminToastAction = () => {
   dismissAdminToast()
 }
 
-const showAdminToast = (message, kind = 'info') => {
+const showAdminToast = (message, kind = 'info', title = '') => {
   clearAdminToastTimer()
-    adminToast.value = {
-      kind,
-      message: String(message || '').trim(),
+  adminToast.value = {
+    title: String(title || '').trim() || (kind === 'error' ? 'Unable to send' : kind === 'success' ? 'Message sent' : 'Notice'),
+    kind,
+    message: String(message || '').trim(),
   }
 
   if (typeof window !== 'undefined') {
@@ -1425,20 +2006,71 @@ const toggleStorageManagement = () => {
 }
 
 const setAdminView = (viewKey) => {
+  if (viewKey === 'inactive-status' || viewKey === 'active-list') {
+    viewKey = 'all-user'
+  }
+
   if (!viewKey || activeAdminView.value === viewKey) return
 
   activeAdminView.value = viewKey
   if (viewKey === 'applicant-list') {
     syncApplicantListSeenState()
+    return
+  }
+
+  if (['employee-list', 'all-user'].includes(viewKey)) {
+    syncEmployerListSeenState()
+    return
+  }
+
+  if (viewKey === 'payment-history') {
+    syncPaymentHistorySeenState()
+    return
+  }
+
+  if (['all-job-post', 'test-job-post'].includes(viewKey)) {
+    syncAdminJobSeenState()
+    return
+  }
+
+  if (viewKey === 'logs') {
+    syncAdminActivityLogSeenState()
   }
 }
 
+watch(activeAdminView, (nextView) => {
+  if (nextView === 'inactive-status' || nextView === 'active-list') {
+    activeAdminView.value = 'all-user'
+    return
+  }
+}, { immediate: true })
+
 const handleAdminManagedAccountCreated = (payload) => {
+  const message = String(payload?.message || '').trim()
   const nextView = String(payload?.accountType || '').trim().toLowerCase() === 'business'
     ? 'employee-list'
     : 'applicant-list'
 
+  if (message) {
+    showAdminToast(
+      message,
+      payload?.kind === 'error' ? 'error' : 'success',
+      String(payload?.title || '').trim() || 'User Created',
+    )
+  }
+
   setAdminView(nextView)
+}
+
+const handleAdminManagedAccountToast = (payload) => {
+  const message = String(payload?.message || '').trim()
+  if (!message) return
+
+  showAdminToast(
+    message,
+    payload?.kind === 'error' ? 'error' : payload?.kind === 'success' ? 'success' : 'info',
+    String(payload?.title || '').trim(),
+  )
 }
 
 const handleAllUserOpen = (payload) => {
@@ -1487,12 +2119,47 @@ const writeLocalJson = (key, value) => {
   window.localStorage.setItem(key, JSON.stringify(value))
 }
 
+function syncAdminDocumentTheme(styleMap = {}) {
+  if (typeof document === 'undefined') return
+
+  const body = document.body
+  if (!body) return
+
+  body.dataset.adminColorMode = isDarkAdminMode.value ? 'dark' : 'light'
+  body.style.colorScheme = isDarkAdminMode.value ? 'dark' : 'light'
+
+  ADMIN_DOCUMENT_THEME_VARIABLE_KEYS.forEach((key) => {
+    const value = styleMap?.[key]
+    if (typeof value === 'string' && value.trim()) {
+      body.style.setProperty(key, value)
+      return
+    }
+
+    body.style.removeProperty(key)
+  })
+}
+
+function clearAdminDocumentTheme() {
+  if (typeof document === 'undefined') return
+
+  const body = document.body
+  if (!body) return
+
+  delete body.dataset.adminColorMode
+  body.style.removeProperty('color-scheme')
+
+  ADMIN_DOCUMENT_THEME_VARIABLE_KEYS.forEach((key) => {
+    body.style.removeProperty(key)
+  })
+}
+
 const persistAdminSettings = () => {
   writeLocalJson(ADMIN_SETTINGS_STORAGE_KEY, {
     theme: selectedAdminTheme.value,
     preferences: {
       compactCards: settingsPreferences.value.compactCards === true,
       reduceMotion: settingsPreferences.value.reduceMotion === true,
+      darkMode: settingsPreferences.value.darkMode === true,
     },
   })
 }
@@ -1507,6 +2174,7 @@ const hydrateAdminSettings = () => {
   settingsPreferences.value = {
     compactCards: storedSettings?.preferences?.compactCards === true,
     reduceMotion: storedSettings?.preferences?.reduceMotion === true,
+    darkMode: storedSettings?.preferences?.darkMode === true,
   }
 }
 
@@ -1529,7 +2197,23 @@ const persistAdminNotifications = () => {
 }
 
 const persistSeenApplicantIds = () => {
-  writeLocalJson(ADMIN_SEEN_APPLICANT_IDS_STORAGE_KEY, [...seenApplicantIds])
+  writeLocalJson(ADMIN_SEEN_APPLICANT_IDS_STORAGE_KEY, seenApplicantIds.value)
+}
+
+const persistSeenEmployerIds = () => {
+  writeLocalJson(ADMIN_SEEN_EMPLOYER_IDS_STORAGE_KEY, seenEmployerIds.value)
+}
+
+const persistSeenPaymentEntryIds = () => {
+  writeLocalJson(ADMIN_SEEN_PAYMENT_ENTRY_IDS_STORAGE_KEY, seenPaymentEntryIds.value)
+}
+
+const persistSeenJobPostIds = () => {
+  writeLocalJson(ADMIN_SEEN_JOB_POST_IDS_STORAGE_KEY, seenJobPostIds.value)
+}
+
+const persistSeenActivityLogIds = () => {
+  writeLocalJson(ADMIN_SEEN_ACTIVITY_LOG_IDS_STORAGE_KEY, seenActivityLogIds.value)
 }
 
 const markApplicantIdsAsSeen = (applicants = []) => {
@@ -1539,7 +2223,10 @@ const markApplicantIdsAsSeen = (applicants = []) => {
 
   if (!applicantIds.length) return
 
-  seenApplicantIds = new Set([...seenApplicantIds, ...applicantIds])
+  seenApplicantIds.value = normalizeIdList([
+    ...seenApplicantIds.value,
+    ...applicantIds,
+  ])
   persistSeenApplicantIds()
 }
 
@@ -1550,14 +2237,53 @@ const markNotificationApplicantIdsAsSeen = (notifications = []) => {
 
   if (!applicantIds.length) return
 
-  seenApplicantIds = new Set([...seenApplicantIds, ...applicantIds])
+  seenApplicantIds.value = normalizeIdList([
+    ...seenApplicantIds.value,
+    ...applicantIds,
+  ])
   persistSeenApplicantIds()
 }
 
 const syncApplicantListSeenState = () => {
-  markApplicantIdsAsSeen(adminProfiles.value.applicants)
+  seenApplicantIds.value = normalizeIdList(
+    (Array.isArray(adminProfiles.value.applicants) ? adminProfiles.value.applicants : [])
+      .map((record) => record?.id),
+  )
+  persistSeenApplicantIds()
   markAllNotificationsAsRead()
   dismissAdminToast()
+}
+
+const syncEmployerListSeenState = () => {
+  seenEmployerIds.value = normalizeIdList(
+    (Array.isArray(adminProfiles.value.employers) ? adminProfiles.value.employers : [])
+      .map((record) => record?.id),
+  )
+  persistSeenEmployerIds()
+}
+
+const syncPaymentHistorySeenState = () => {
+  seenPaymentEntryIds.value = normalizeIdList(
+    (Array.isArray(adminPaymentHistory.value) ? adminPaymentHistory.value : [])
+      .map((entry) => entry?.id),
+  )
+  persistSeenPaymentEntryIds()
+}
+
+const syncAdminJobSeenState = () => {
+  seenJobPostIds.value = normalizeIdList(
+    (Array.isArray(adminJobPosts.value) ? adminJobPosts.value : [])
+      .map((entry) => entry?.id),
+  )
+  persistSeenJobPostIds()
+}
+
+const syncAdminActivityLogSeenState = () => {
+  seenActivityLogIds.value = normalizeIdList(
+    (Array.isArray(activityLogs.value) ? activityLogs.value : [])
+      .map((entry) => entry?.id),
+  )
+  persistSeenActivityLogIds()
 }
 
 const applicantNotificationName = (record) =>
@@ -1590,15 +2316,47 @@ const hydrateAdminNotificationState = () => {
 
   const storedApplicantIds = readLocalJson(ADMIN_SEEN_APPLICANT_IDS_STORAGE_KEY, [])
   if (Array.isArray(storedApplicantIds) && storedApplicantIds.length) {
-    seenApplicantIds = new Set(
-      storedApplicantIds
-        .map((value) => String(value || '').trim())
-        .filter(Boolean),
-    )
+    seenApplicantIds.value = normalizeIdList(storedApplicantIds)
     shouldSeedSeenApplicantIdsOnFirstSnapshot = false
   } else {
-    seenApplicantIds = new Set()
+    seenApplicantIds.value = []
     shouldSeedSeenApplicantIdsOnFirstSnapshot = true
+  }
+
+  const storedEmployerIds = readLocalJson(ADMIN_SEEN_EMPLOYER_IDS_STORAGE_KEY, [])
+  if (Array.isArray(storedEmployerIds) && storedEmployerIds.length) {
+    seenEmployerIds.value = normalizeIdList(storedEmployerIds)
+    shouldSeedSeenEmployerIdsOnFirstSnapshot = false
+  } else {
+    seenEmployerIds.value = []
+    shouldSeedSeenEmployerIdsOnFirstSnapshot = true
+  }
+
+  const storedPaymentEntryIds = readLocalJson(ADMIN_SEEN_PAYMENT_ENTRY_IDS_STORAGE_KEY, [])
+  if (Array.isArray(storedPaymentEntryIds) && storedPaymentEntryIds.length) {
+    seenPaymentEntryIds.value = normalizeIdList(storedPaymentEntryIds)
+    shouldSeedSeenPaymentEntryIdsOnFirstSnapshot = false
+  } else {
+    seenPaymentEntryIds.value = []
+    shouldSeedSeenPaymentEntryIdsOnFirstSnapshot = true
+  }
+
+  const storedJobPostIds = readLocalJson(ADMIN_SEEN_JOB_POST_IDS_STORAGE_KEY, [])
+  if (Array.isArray(storedJobPostIds) && storedJobPostIds.length) {
+    seenJobPostIds.value = normalizeIdList(storedJobPostIds)
+    shouldSeedSeenJobPostIdsOnFirstSnapshot = false
+  } else {
+    seenJobPostIds.value = []
+    shouldSeedSeenJobPostIdsOnFirstSnapshot = true
+  }
+
+  const storedActivityLogIds = readLocalJson(ADMIN_SEEN_ACTIVITY_LOG_IDS_STORAGE_KEY, [])
+  if (Array.isArray(storedActivityLogIds) && storedActivityLogIds.length) {
+    seenActivityLogIds.value = normalizeIdList(storedActivityLogIds)
+    shouldSeedSeenActivityLogIdsOnFirstSnapshot = false
+  } else {
+    seenActivityLogIds.value = []
+    shouldSeedSeenActivityLogIdsOnFirstSnapshot = true
   }
 
   hasHydratedAdminNotificationState = true
@@ -1644,9 +2402,6 @@ const announceNewApplicants = (newApplicants) => {
   if (!newApplicants.length) return
 
   const now = new Date().toISOString()
-  // Treat applicants as seen as soon as the admin has been notified once,
-  // so the same login toast does not repeat on the next session.
-  markApplicantIdsAsSeen(newApplicants)
   const nextNotifications = newApplicants.map((applicant) => ({
     id: `applicant-${String(applicant?.id || Date.now())}-${String(applicant?.created_at || applicant?.submitted_at || now)}`,
     kind: 'applicant',
@@ -1694,41 +2449,170 @@ const isApplicantCreatedDuringCurrentAdminSession = (applicant) => {
 
 const reconcileApplicantNotifications = (applicants) => {
   hydrateAdminNotificationState()
+  const applicantRecords = Array.isArray(applicants) ? applicants : []
 
-  const currentIds = new Set(
-    applicants
+  const currentIds = normalizeIdList(
+    applicantRecords
       .map((applicant) => String(applicant?.id || '').trim())
       .filter(Boolean),
   )
 
   if (shouldSeedSeenApplicantIdsOnFirstSnapshot) {
-    seenApplicantIds = currentIds
+    seenApplicantIds.value = currentIds
     persistSeenApplicantIds()
     shouldSeedSeenApplicantIdsOnFirstSnapshot = false
     return
   }
 
-  if (activeAdminView.value === 'applicant-list') {
-    seenApplicantIds = currentIds
+  const prunedSeenIds = seenApplicantIds.value.filter((id) => currentIds.includes(id))
+  if (!areIdListsEqual(prunedSeenIds, seenApplicantIds.value)) {
+    seenApplicantIds.value = prunedSeenIds
     persistSeenApplicantIds()
+  }
+
+  if (activeAdminView.value === 'applicant-list') {
+    if (!areIdListsEqual(currentIds, seenApplicantIds.value)) {
+      seenApplicantIds.value = currentIds
+      persistSeenApplicantIds()
+    }
     markAllNotificationsAsRead()
     dismissAdminToast()
     return
   }
 
-  const newApplicants = applicants.filter((applicant) => {
+  const notifiedApplicantIds = new Set(
+    adminNotifications.value
+      .map((notification) => String(notification?.applicantId || '').trim())
+      .filter(Boolean),
+  )
+  const seenApplicantIdSet = new Set(seenApplicantIds.value)
+  const newApplicants = applicantRecords.filter((applicant) => {
     const applicantId = String(applicant?.id || '').trim()
     return applicantId
-      && !seenApplicantIds.has(applicantId)
+      && !seenApplicantIdSet.has(applicantId)
+      && !notifiedApplicantIds.has(applicantId)
       && isApplicantCreatedDuringCurrentAdminSession(applicant)
   })
 
   if (newApplicants.length) {
     announceNewApplicants(newApplicants)
   }
+}
 
-  seenApplicantIds = currentIds
-  persistSeenApplicantIds()
+const reconcileEmployerSidebarState = (employers = []) => {
+  hydrateAdminNotificationState()
+
+  const currentIds = normalizeIdList(
+    (Array.isArray(employers) ? employers : [])
+      .map((record) => record?.id),
+  )
+
+  if (shouldSeedSeenEmployerIdsOnFirstSnapshot) {
+    seenEmployerIds.value = currentIds
+    persistSeenEmployerIds()
+    shouldSeedSeenEmployerIdsOnFirstSnapshot = false
+    return
+  }
+
+  const prunedSeenIds = seenEmployerIds.value.filter((id) => currentIds.includes(id))
+  if (!areIdListsEqual(prunedSeenIds, seenEmployerIds.value)) {
+    seenEmployerIds.value = prunedSeenIds
+    persistSeenEmployerIds()
+  }
+
+  if (['employee-list', 'all-user'].includes(activeAdminView.value)) {
+    if (!areIdListsEqual(currentIds, seenEmployerIds.value)) {
+      seenEmployerIds.value = currentIds
+      persistSeenEmployerIds()
+    }
+  }
+}
+
+const reconcilePaymentHistorySidebarState = (entries = []) => {
+  hydrateAdminNotificationState()
+
+  const currentIds = normalizeIdList(
+    (Array.isArray(entries) ? entries : [])
+      .map((entry) => entry?.id),
+  )
+
+  if (shouldSeedSeenPaymentEntryIdsOnFirstSnapshot) {
+    seenPaymentEntryIds.value = currentIds
+    persistSeenPaymentEntryIds()
+    shouldSeedSeenPaymentEntryIdsOnFirstSnapshot = false
+    return
+  }
+
+  const prunedSeenIds = seenPaymentEntryIds.value.filter((id) => currentIds.includes(id))
+  if (!areIdListsEqual(prunedSeenIds, seenPaymentEntryIds.value)) {
+    seenPaymentEntryIds.value = prunedSeenIds
+    persistSeenPaymentEntryIds()
+  }
+
+  if (activeAdminView.value === 'payment-history') {
+    if (!areIdListsEqual(currentIds, seenPaymentEntryIds.value)) {
+      seenPaymentEntryIds.value = currentIds
+      persistSeenPaymentEntryIds()
+    }
+  }
+}
+
+const reconcileAdminJobSidebarState = (jobs = []) => {
+  hydrateAdminNotificationState()
+
+  const currentIds = normalizeIdList(
+    (Array.isArray(jobs) ? jobs : [])
+      .map((entry) => entry?.id),
+  )
+
+  if (shouldSeedSeenJobPostIdsOnFirstSnapshot) {
+    seenJobPostIds.value = currentIds
+    persistSeenJobPostIds()
+    shouldSeedSeenJobPostIdsOnFirstSnapshot = false
+    return
+  }
+
+  const prunedSeenIds = seenJobPostIds.value.filter((id) => currentIds.includes(id))
+  if (!areIdListsEqual(prunedSeenIds, seenJobPostIds.value)) {
+    seenJobPostIds.value = prunedSeenIds
+    persistSeenJobPostIds()
+  }
+
+  if (['all-job-post', 'test-job-post'].includes(activeAdminView.value)) {
+    if (!areIdListsEqual(currentIds, seenJobPostIds.value)) {
+      seenJobPostIds.value = currentIds
+      persistSeenJobPostIds()
+    }
+  }
+}
+
+const reconcileAdminActivityLogSidebarState = (entries = []) => {
+  hydrateAdminNotificationState()
+
+  const currentIds = normalizeIdList(
+    (Array.isArray(entries) ? entries : [])
+      .map((entry) => entry?.id),
+  )
+
+  if (shouldSeedSeenActivityLogIdsOnFirstSnapshot) {
+    seenActivityLogIds.value = currentIds
+    persistSeenActivityLogIds()
+    shouldSeedSeenActivityLogIdsOnFirstSnapshot = false
+    return
+  }
+
+  const prunedSeenIds = seenActivityLogIds.value.filter((id) => currentIds.includes(id))
+  if (!areIdListsEqual(prunedSeenIds, seenActivityLogIds.value)) {
+    seenActivityLogIds.value = prunedSeenIds
+    persistSeenActivityLogIds()
+  }
+
+  if (activeAdminView.value === 'logs') {
+    if (!areIdListsEqual(currentIds, seenActivityLogIds.value)) {
+      seenActivityLogIds.value = currentIds
+      persistSeenActivityLogIds()
+    }
+  }
 }
 
 const syncCurrentUser = async (firebaseUser) => {
@@ -1803,17 +2687,30 @@ const handleLogout = async () => {
   closeNotificationMenu()
   closeSettingsModal()
   dismissAdminToast()
+  sessionStorage.setItem(LOGOUT_TOAST_KEY, '1')
   await signOut(auth).catch(() => {})
-  await router.push('/login')
+  await router.replace('/login')
 }
 
 const handleAdminDashboardStorageChange = (event) => {
   const storageKey = String(event?.key || '').trim()
   if (!storageKey) return
 
-  if (storageKey === ADMIN_NOTIFICATION_STORAGE_KEY) {
+  if ([
+    ADMIN_NOTIFICATION_STORAGE_KEY,
+    ADMIN_SEEN_APPLICANT_IDS_STORAGE_KEY,
+    ADMIN_SEEN_EMPLOYER_IDS_STORAGE_KEY,
+    ADMIN_SEEN_PAYMENT_ENTRY_IDS_STORAGE_KEY,
+    ADMIN_SEEN_JOB_POST_IDS_STORAGE_KEY,
+    ADMIN_SEEN_ACTIVITY_LOG_IDS_STORAGE_KEY,
+  ].includes(storageKey)) {
     hasHydratedAdminNotificationState = false
     hydrateAdminNotificationState()
+    return
+  }
+
+  if (storageKey === ADMIN_PAYMENT_HISTORY_STORAGE_KEY) {
+    syncAdminPaymentHistoryState()
     return
   }
 
@@ -1944,6 +2841,7 @@ onBeforeUnmount(() => {
   stopAllWorkspaceUserSubscriptions()
   clearAdminToastTimer()
   document.body.style.overflow = ''
+  clearAdminDocumentTheme()
   document.removeEventListener('click', onDocumentClick)
   window.removeEventListener('storage', handleAdminDashboardStorageChange)
 })
@@ -1953,6 +2851,7 @@ onBeforeUnmount(() => {
   <section
     class="admin-shell"
     :style="adminShellStyle"
+    :data-color-mode="settingsPreferences.darkMode ? 'dark' : 'light'"
     :data-compact-spacing="settingsPreferences.compactCards ? 'true' : 'false'"
     :data-reduce-motion="settingsPreferences.reduceMotion ? 'true' : 'false'"
   >
@@ -1961,8 +2860,11 @@ onBeforeUnmount(() => {
       :wordmark-src="pwdWordmark"
       :primary-items="primaryItems"
       :user-management-items="userManagementItems"
+      :user-management-badge="userManagementSidebarBadge"
       :payment-management-items="paymentManagementItems"
+      :payment-management-badge="subscriptionManagementSidebarBadge"
       :job-management-items="jobManagementItems"
+      :job-management-badge="jobManagementSidebarBadge"
       :storage-management-items="storageManagementItems"
       :active-view="activeAdminView"
       :user-management-open="userManagementOpen"
@@ -2061,6 +2963,15 @@ onBeforeUnmount(() => {
 
                     <label class="admin-settings-toggle">
                       <div class="admin-settings-toggle__copy">
+                        <strong>Dark mode</strong>
+                        <span>Switch the whole admin workspace to a low-light dashboard theme.</span>
+                      </div>
+                      <input v-model="settingsPreferences.darkMode" type="checkbox" />
+                      <span class="admin-settings-toggle__switch" aria-hidden="true" />
+                    </label>
+
+                    <label class="admin-settings-toggle">
+                      <div class="admin-settings-toggle__copy">
                         <strong>Compact spacing</strong>
                         <span>Tighten dashboard gaps and cards for a denser layout.</span>
                       </div>
@@ -2105,6 +3016,88 @@ onBeforeUnmount(() => {
           </div>
         </transition>
 
+        <transition name="admin-settings-modal">
+          <div
+            v-if="adminMessageModalOpen && selectedAdminMessageRecipient"
+            class="admin-message-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="admin-message-modal-title"
+            @click.self="closeAdminMessageModal"
+          >
+            <div class="admin-message-modal__panel">
+              <div class="admin-message-modal__header">
+                <div>
+                  <span class="admin-message-modal__eyebrow">Direct Message</span>
+                  <h2 id="admin-message-modal-title">Send Message</h2>
+                  <p>Deliver a real-time admin message to this account.</p>
+                </div>
+
+                <button
+                  type="button"
+                  class="admin-message-modal__close"
+                  aria-label="Close message composer"
+                  :disabled="isAdminMessageSubmitting"
+                  @click="closeAdminMessageModal"
+                >
+                  <i class="bi bi-x-lg" aria-hidden="true" />
+                </button>
+              </div>
+
+              <div class="admin-message-modal__body">
+                <div class="admin-message-modal__recipient">
+                  <span class="admin-message-modal__recipient-label">Recipient</span>
+                  <strong>{{ selectedAdminMessageRecipient.name }}</strong>
+                  <small>{{ selectedAdminMessageRecipient.email }} · {{ getAdminMessageRecipientRoleLabel(selectedAdminMessageRecipient) }}</small>
+                </div>
+
+                <label class="admin-message-modal__field">
+                  <span>Title</span>
+                  <input
+                    v-model.trim="adminDirectMessageForm.title"
+                    type="text"
+                    :maxlength="ADMIN_DIRECT_MESSAGE_TITLE_LIMIT"
+                    placeholder="Admin message"
+                  />
+                </label>
+
+                <label class="admin-message-modal__field">
+                  <span>Message</span>
+                  <textarea
+                    v-model="adminDirectMessageForm.message"
+                    rows="6"
+                    :maxlength="ADMIN_DIRECT_MESSAGE_BODY_LIMIT"
+                    placeholder="Write the message you want to send..."
+                  />
+                </label>
+
+                <div class="admin-message-modal__meta">
+                  <small>{{ adminDirectMessageBodyLength }}/{{ ADMIN_DIRECT_MESSAGE_BODY_LIMIT }}</small>
+                </div>
+
+                <div class="admin-message-modal__actions">
+                  <button
+                    type="button"
+                    class="admin-message-modal__button admin-message-modal__button--ghost"
+                    :disabled="isAdminMessageSubmitting"
+                    @click="closeAdminMessageModal"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    class="admin-message-modal__button admin-message-modal__button--primary"
+                    :disabled="isAdminMessageSubmitting || !canSubmitAdminDirectMessage"
+                    @click="submitAdminDirectMessage"
+                  >
+                    {{ isAdminMessageSubmitting ? 'Sending...' : 'Send' }}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </transition>
+
         <transition name="admin-toast">
           <div v-if="adminToast" class="admin-toast" role="status" aria-live="polite">
             <div class="admin-toast__icon" aria-hidden="true">
@@ -2133,7 +3126,7 @@ onBeforeUnmount(() => {
         </transition>
 
         <transition name="admin-view" mode="out-in" appear>
-          <div v-if="!isInitialAdminLoading" :key="activeAdminView">
+          <div v-if="!isInitialAdminLoading" :key="activeAdminView" class="admin-view-stage">
             <template v-if="activeAdminView === 'dashboard'">
               <section class="dashboard-summary-grid" aria-label="Dashboard summary">
                 <article
@@ -2391,23 +3384,27 @@ onBeforeUnmount(() => {
             <AdminCreateUser
               v-else-if="activeAdminView === 'create-user'"
               @created="handleAdminManagedAccountCreated"
+              @toast="handleAdminManagedAccountToast"
             />
 
             <AdminAllUser
               v-else-if="activeAdminView === 'all-user'"
               :applicants="adminProfiles.applicants"
               :employees="adminProfiles.employers"
+              :new-user-keys="recentAdminUserKeys"
               @open-user="handleAllUserOpen"
             />
 
             <AdminApplicantList
               v-else-if="activeAdminView === 'applicant-list'"
               :applicants="adminProfiles.applicants"
+              :new-applicant-ids="recentApplicantIds"
             />
 
             <section v-else-if="activeAdminView === 'employee-list'" class="admin-workspace-members-stack">
               <AdminEmployeeList
                 :employees="adminProfiles.employers"
+                :new-employee-ids="recentEmployerIds"
                 :workspace-members-by-business-id="businessWorkspaceUsers"
               />
 
@@ -2439,13 +3436,20 @@ onBeforeUnmount(() => {
             <AdminJobPostList
               v-else-if="activeAdminView === 'all-job-post'"
               :jobs="adminJobPosts"
+              :new-job-ids="recentAdminJobIds"
               mode="all"
             />
 
             <AdminJobPostList
               v-else-if="activeAdminView === 'test-job-post'"
               :jobs="adminJobPosts"
+              :new-job-ids="recentAdminJobIds"
               mode="test"
+            />
+
+            <AdminApplicantStorage
+              v-else-if="activeAdminView === 'applicant-storage'"
+              :applicants="adminProfiles.applicants"
             />
 
             <AdminBusinessStorage
@@ -2457,7 +3461,7 @@ onBeforeUnmount(() => {
               <div class="dashboard-panel__head">
                 <div>
                   <h2>Admin Logs</h2>
-                  <p class="dashboard-panel__subcopy">Recent activity from notifications, payments, and deleted user history.</p>
+                  <p class="dashboard-panel__subcopy">Recent system, auth, account, billing, and admin actions with actor and target details.</p>
                 </div>
                 <span class="dashboard-panel__pill">{{ adminActivityLogs.length }} items</span>
               </div>
@@ -2471,10 +3475,38 @@ onBeforeUnmount(() => {
                 >
                   <div class="admin-logs-item__badge">{{ entry.meta }}</div>
                   <div class="admin-logs-item__body">
-                    <strong>{{ entry.title }}</strong>
+                    <div class="admin-logs-item__title-row">
+                      <span v-if="isRecentActivityLogRecord(entry)" class="admin-row-new-badge">NEW</span>
+                      <strong>{{ entry.title }}</strong>
+                      <span class="admin-logs-item__status" :class="`admin-logs-item__status--${entry.tone}`">
+                        {{ entry.statusLabel }}
+                      </span>
+                    </div>
                     <p>{{ entry.description }}</p>
+                    <p v-if="entry.metadataSummary" class="admin-logs-item__summary">{{ entry.metadataSummary }}</p>
+                    <div class="admin-logs-item__details">
+                      <span class="admin-logs-item__detail">
+                        <i class="bi bi-person" aria-hidden="true" />
+                        {{ entry.actorLabel }}
+                      </span>
+                      <span class="admin-logs-item__detail">
+                        <i class="bi bi-bullseye" aria-hidden="true" />
+                        {{ entry.targetLabel }}
+                      </span>
+                      <span class="admin-logs-item__detail">
+                        <i class="bi bi-hdd-network" aria-hidden="true" />
+                        {{ entry.sourceLabel }}
+                      </span>
+                      <span class="admin-logs-item__detail admin-logs-item__detail--event">
+                        <i class="bi bi-terminal" aria-hidden="true" />
+                        {{ entry.eventLabel }}
+                      </span>
+                    </div>
                   </div>
-                  <span class="admin-logs-item__time">{{ entry.createdAt || 'No timestamp' }}</span>
+                  <span class="admin-logs-item__time">
+                    <strong>{{ entry.createdAtRelative }}</strong>
+                    <small>{{ entry.createdAtLabel }}</small>
+                  </span>
                 </article>
               </div>
 
@@ -2587,7 +3619,10 @@ onBeforeUnmount(() => {
                       </div>
 
                       <div class="dashboard-approved-row__meta">
-                        <strong>{{ entry.buyer }}</strong>
+                        <div class="dashboard-approved-row__meta-top">
+                          <span v-if="isRecentPaymentHistoryRecord(entry)" class="admin-row-new-badge">NEW</span>
+                          <strong>{{ entry.buyer }}</strong>
+                        </div>
                         <span>{{ entry.buyerEmail }}</span>
                       </div>
                     </div>
@@ -2625,22 +3660,309 @@ onBeforeUnmount(() => {
   </section>
 </template>
 
+<style>
+body[data-admin-color-mode='dark'] {
+  color-scheme: dark;
+}
+
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='toolbar-card'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='table-shell'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-card'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='__card'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-panel'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='__panel'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-sheet'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='__sheet'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-surface'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='__surface'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-toolbar'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='__toolbar'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-search'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='search-field'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-summary'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='__summary'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-empty'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='__empty'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-notice'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='__notice'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-toast'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='__toast'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-message'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='__message'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-switch'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='__switch'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-dropzone'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-lock'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-filter'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='__details'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='__editor'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='__matrix'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-access'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='__access'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-zone'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='__access-zone'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-shell'],
+body[data-admin-color-mode='dark'] [class*='-modal__panel'],
+body[data-admin-color-mode='dark'] [class*='-modal__empty'] {
+  background: var(--admin-bg-surface) !important;
+  color: var(--admin-text-primary) !important;
+  border-color: var(--admin-border-color) !important;
+  box-shadow: var(--admin-shadow-soft) !important;
+}
+
+body[data-admin-color-mode='dark'] .admin-view-stage h1,
+body[data-admin-color-mode='dark'] .admin-view-stage h2,
+body[data-admin-color-mode='dark'] .admin-view-stage h3,
+body[data-admin-color-mode='dark'] .admin-view-stage h4,
+body[data-admin-color-mode='dark'] .admin-view-stage h5,
+body[data-admin-color-mode='dark'] .admin-view-stage h6,
+body[data-admin-color-mode='dark'] .admin-view-stage strong,
+body[data-admin-color-mode='dark'] .admin-view-stage label,
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-title'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='__title'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-heading'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='__heading'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-label'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='__label'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-value'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='__value'],
+body[data-admin-color-mode='dark'] [class*='-modal__copy'] strong {
+  color: var(--admin-text-primary) !important;
+}
+
+body[data-admin-color-mode='dark'] .admin-view-stage p,
+body[data-admin-color-mode='dark'] .admin-view-stage small,
+body[data-admin-color-mode='dark'] .admin-view-stage li,
+body[data-admin-color-mode='dark'] .admin-view-stage dt,
+body[data-admin-color-mode='dark'] .admin-view-stage dd,
+body[data-admin-color-mode='dark'] .admin-view-stage th,
+body[data-admin-color-mode='dark'] .admin-view-stage td,
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-copy'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='__copy'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-meta'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='__meta'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-detail'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='__detail'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-subtitle'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='__subtitle'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-subcopy'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='__subcopy'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-identity'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='__identity'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-summary'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-message'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-item'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-check'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-select'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-empty'],
+body[data-admin-color-mode='dark'] [class*='-modal__copy'],
+body[data-admin-color-mode='dark'] [class*='-modal__warning'],
+body[data-admin-color-mode='dark'] [class*='-modal__error'] {
+  color: var(--admin-text-secondary) !important;
+}
+
+body[data-admin-color-mode='dark'] .admin-view-stage input:not([type='checkbox']):not([type='radio']):not([type='file']),
+body[data-admin-color-mode='dark'] .admin-view-stage select,
+body[data-admin-color-mode='dark'] .admin-view-stage textarea,
+body[data-admin-color-mode='dark'] [class*='-modal__field'] input,
+body[data-admin-color-mode='dark'] [class*='-modal__field'] select,
+body[data-admin-color-mode='dark'] [class*='-modal__field'] textarea {
+  background: var(--admin-input-bg) !important;
+  color: var(--admin-input-text) !important;
+  border-color: var(--admin-input-border) !important;
+}
+
+body[data-admin-color-mode='dark'] .admin-view-stage input:not([type='checkbox']):not([type='radio']):not([type='file'])::placeholder,
+body[data-admin-color-mode='dark'] .admin-view-stage textarea::placeholder,
+body[data-admin-color-mode='dark'] [class*='-modal__field'] input::placeholder,
+body[data-admin-color-mode='dark'] [class*='-modal__field'] textarea::placeholder {
+  color: var(--admin-input-placeholder) !important;
+}
+
+body[data-admin-color-mode='dark'] .admin-view-stage input[type='checkbox'],
+body[data-admin-color-mode='dark'] .admin-view-stage input[type='radio'] {
+  background: var(--admin-bg-surface-muted) !important;
+  border-color: var(--admin-input-border) !important;
+  color: var(--admin-input-text) !important;
+}
+
+body[data-admin-color-mode='dark'] .admin-view-stage input[type='checkbox']:checked,
+body[data-admin-color-mode='dark'] .admin-view-stage input[type='radio']:checked {
+  background: linear-gradient(135deg, var(--admin-theme-accent) 0%, #2fa66a 100%) !important;
+  border-color: var(--admin-theme-accent) !important;
+}
+
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='switch-indicator'] {
+  background: var(--admin-bg-surface-elevated) !important;
+  border: 1px solid var(--admin-border-color) !important;
+  box-shadow: var(--admin-shadow-soft) !important;
+}
+
+body[data-admin-color-mode='dark'] .admin-view-stage thead th {
+  background: var(--admin-bg-surface-muted) !important;
+  color: var(--admin-text-secondary) !important;
+  border-color: var(--admin-border-color) !important;
+}
+
+body[data-admin-color-mode='dark'] .admin-view-stage tbody td,
+body[data-admin-color-mode='dark'] .admin-view-stage tbody th,
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-row'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='__row'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-item'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='__item'] {
+  background: transparent !important;
+  border-color: var(--admin-border-color) !important;
+}
+
+body[data-admin-color-mode='dark'] .admin-view-stage tbody tr:hover td,
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-row']:hover,
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='__row']:hover,
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-item']:hover,
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='__item']:hover {
+  background: var(--admin-bg-hover) !important;
+}
+
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='ghost-btn'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='filter-btn'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='action-btn'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-button'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='__button'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='__ghost'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='__submit'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='template-button'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='tone-option'],
+body[data-admin-color-mode='dark'] .admin-view-stage .admin-table-action,
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='__close'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='__trigger'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='__option'] {
+  background: var(--admin-bg-surface-muted) !important;
+  color: var(--admin-text-primary) !important;
+  border-color: var(--admin-border-color) !important;
+  box-shadow: none !important;
+}
+
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-pill'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='__pill'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-badge'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='__badge'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-chip'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='__chip'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-tag'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='__tag'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-status'],
+body[data-admin-color-mode='dark'] .admin-view-stage span[class*='__status'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-access-head'] span,
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='__access-head'] span,
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='-zone-head'] span,
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='__zone-head'] span,
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='tag-action'] {
+  background: var(--admin-bg-surface-muted) !important;
+  color: var(--admin-text-secondary) !important;
+  border-color: var(--admin-border-color) !important;
+  box-shadow: none !important;
+}
+
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='is-active'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='--selected'] {
+  background: rgba(46, 154, 98, 0.18) !important;
+  color: #dcfce8 !important;
+  border-color: rgba(79, 194, 131, 0.34) !important;
+}
+
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='is-approved'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='is-open'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='--success'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='--approve'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='--restore'] {
+  background: rgba(31, 111, 70, 0.24) !important;
+  color: #bbf7d0 !important;
+  border-color: rgba(74, 222, 128, 0.24) !important;
+}
+
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='is-pending'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='is-closed'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='is-draft'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='--warning'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='--archive'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='--neutral'] {
+  background: rgba(180, 120, 24, 0.22) !important;
+  color: #fde68a !important;
+  border-color: rgba(245, 158, 11, 0.28) !important;
+}
+
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='is-rejected'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='is-error'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='--danger'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='--reject'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='--remove'],
+body[data-admin-color-mode='dark'] .admin-view-stage [class*='--delete'],
+body[data-admin-color-mode='dark'] [class*='-modal__warning'],
+body[data-admin-color-mode='dark'] [class*='-modal__error'] {
+  background: rgba(153, 47, 47, 0.22) !important;
+  color: #fecaca !important;
+  border-color: rgba(248, 113, 113, 0.24) !important;
+}
+
+body[data-admin-color-mode='dark'] [class*='-modal__approve-icon'] {
+  background: linear-gradient(135deg, rgba(31, 111, 70, 0.34), rgba(20, 83, 45, 0.9)) !important;
+  color: #dcfce7 !important;
+  box-shadow: none !important;
+}
+
+body[data-admin-color-mode='dark'] [class*='-modal__danger-icon'] {
+  background: linear-gradient(135deg, rgba(153, 47, 47, 0.34), rgba(69, 10, 10, 0.9)) !important;
+  color: #fecaca !important;
+  box-shadow: none !important;
+}
+</style>
+
 <style scoped>
 .admin-shell {
   --admin-theme-accent: #2f6a49;
   --admin-theme-accent-soft: rgba(47, 106, 73, 0.12);
   --admin-theme-accent-border: rgba(47, 106, 73, 0.2);
   --admin-theme-shell-glow: radial-gradient(circle at top right, rgba(63, 166, 122, 0.14), transparent 28%);
+  --admin-bg-shell-start: #eef8f2;
+  --admin-bg-shell-mid: #f8fcf9;
+  --admin-bg-shell-end: #ffffff;
+  --admin-bg-content-glow: rgba(46, 154, 104, 0.08);
+  --admin-bg-content-top: rgba(248, 252, 249, 0.92);
+  --admin-bg-content-bottom: rgba(255, 255, 255, 0.96);
+  --admin-bg-surface: #ffffff;
+  --admin-bg-surface-muted: #f8fafc;
+  --admin-bg-surface-elevated: rgba(255, 255, 255, 0.94);
+  --admin-bg-surface-inset: rgba(248, 252, 249, 0.7);
+  --admin-bg-hover: rgba(241, 245, 249, 0.96);
+  --admin-bg-hover-strong: rgba(240, 247, 243, 0.95);
+  --admin-bg-overlay: rgba(15, 23, 42, 0.24);
+  --admin-text-primary: #172033;
+  --admin-text-secondary: #64748b;
+  --admin-text-muted: #8a93a5;
+  --admin-border-color: rgba(223, 227, 234, 0.96);
+  --admin-border-strong: rgba(213, 226, 219, 0.92);
+  --admin-shadow-soft: 0 20px 40px rgba(15, 23, 42, 0.16);
+  --admin-shadow-strong: 0 24px 56px rgba(15, 23, 42, 0.18);
+  --admin-input-bg: #ffffff;
+  --admin-input-border: rgba(223, 227, 234, 0.96);
+  --admin-input-text: #172033;
+  --admin-input-placeholder: #8a93a5;
+  --admin-icon-color: #677188;
   --admin-density-gap: 1.5rem;
   --admin-motion-duration: 0.24s;
   min-height: 100vh;
   display: grid;
   grid-template-columns: 252px 1fr;
   font-family: "Inter", "Segoe UI", sans-serif;
+  color: var(--admin-text-primary);
+  color-scheme: light;
   background:
     var(--admin-theme-shell-glow),
-    linear-gradient(180deg, #eef8f2 0%, #f8fcf9 48%, #ffffff 100%);
+    linear-gradient(180deg, var(--admin-bg-shell-start) 0%, var(--admin-bg-shell-mid) 48%, var(--admin-bg-shell-end) 100%);
   transition: grid-template-columns var(--admin-motion-duration) ease;
+}
+
+.admin-shell[data-color-mode='dark'] {
+  color-scheme: dark;
 }
 
 .admin-icon-button {
@@ -2650,8 +3972,8 @@ onBeforeUnmount(() => {
   border-radius: 0.8rem;
   display: grid;
   place-items: center;
-  color: #677188;
-  background: #f3f6fa;
+  color: var(--admin-icon-color);
+  background: var(--admin-bg-surface-muted);
   cursor: pointer;
   transition:
     background-color 0.22s ease,
@@ -2660,8 +3982,8 @@ onBeforeUnmount(() => {
 }
 
 .admin-icon-button:hover {
-  color: #3f4b61;
-  background: #e8eef6;
+  color: var(--admin-text-primary);
+  background: var(--admin-bg-hover);
   transform: translateY(-1px);
 }
 
@@ -2674,11 +3996,11 @@ onBeforeUnmount(() => {
   border-radius: 0.82rem;
   padding-left: 0.62rem;
   padding-right: 0.62rem;
-  background: #f7f9fc;
+  background: var(--admin-bg-surface-muted);
 }
 
 .admin-nav-button__badge {
-  color: #616b7f;
+  color: var(--admin-text-secondary);
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: -0.01em;
@@ -2732,9 +4054,10 @@ onBeforeUnmount(() => {
   position: relative;
   min-width: 0;
   padding: 0;
+  color: var(--admin-text-primary);
   background:
-    radial-gradient(circle at top left, rgba(46, 154, 104, 0.08), transparent 22%),
-    linear-gradient(180deg, rgba(248, 252, 249, 0.92) 0%, rgba(255, 255, 255, 0.96) 100%);
+    radial-gradient(circle at top left, var(--admin-bg-content-glow), transparent 22%),
+    linear-gradient(180deg, var(--admin-bg-content-top) 0%, var(--admin-bg-content-bottom) 100%);
 }
 
 .admin-navbar-shell {
@@ -2742,10 +4065,194 @@ onBeforeUnmount(() => {
   top: 0;
   z-index: 80;
   padding: 0 1.5rem;
-  background: rgba(255, 255, 255, 0.94);
+  border-bottom: 1px solid var(--admin-border-color);
+  background: var(--admin-bg-surface-elevated);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   transition: padding var(--admin-motion-duration) ease;
+}
+
+.admin-message-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 130;
+  display: grid;
+  place-items: center;
+  padding: 1.25rem;
+  background: var(--admin-bg-overlay);
+  backdrop-filter: blur(10px);
+}
+
+.admin-message-modal__panel {
+  width: min(100%, 34rem);
+  border: 1px solid var(--admin-border-color);
+  border-radius: 1.35rem;
+  background: linear-gradient(180deg, var(--admin-bg-surface) 0%, var(--admin-bg-surface-muted) 100%);
+  box-shadow: var(--admin-shadow-strong);
+  overflow: hidden;
+}
+
+.admin-message-modal__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.2rem 1.2rem 1rem;
+  border-bottom: 1px solid var(--admin-border-color);
+}
+
+.admin-message-modal__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.28rem 0.62rem;
+  border-radius: 999px;
+  background: var(--admin-theme-accent-soft);
+  color: var(--admin-theme-accent);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.admin-message-modal__header h2 {
+  margin: 0.44rem 0 0;
+  color: var(--admin-text-primary);
+  font-size: 1.28rem;
+}
+
+.admin-message-modal__header p {
+  margin: 0.34rem 0 0;
+  color: var(--admin-text-secondary);
+  font-size: 0.84rem;
+}
+
+.admin-message-modal__close {
+  width: 2.4rem;
+  height: 2.4rem;
+  border: 1px solid var(--admin-border-color);
+  border-radius: 0.88rem;
+  background: var(--admin-bg-surface);
+  color: var(--admin-text-secondary);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.admin-message-modal__body {
+  display: grid;
+  gap: 0.95rem;
+  padding: 1.2rem;
+}
+
+.admin-message-modal__recipient {
+  display: grid;
+  gap: 0.18rem;
+  padding: 0.92rem 1rem;
+  border: 1px solid var(--admin-border-color);
+  border-radius: 1rem;
+  background: var(--admin-bg-surface);
+}
+
+.admin-message-modal__recipient-label {
+  color: var(--admin-text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.admin-message-modal__recipient strong {
+  color: var(--admin-text-primary);
+  font-size: 1rem;
+}
+
+.admin-message-modal__recipient small {
+  color: var(--admin-text-secondary);
+  font-size: 0.8rem;
+}
+
+.admin-message-modal__field {
+  display: grid;
+  gap: 0.42rem;
+}
+
+.admin-message-modal__field span {
+  color: var(--admin-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.admin-message-modal__field input,
+.admin-message-modal__field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--admin-input-border);
+  border-radius: 0.92rem;
+  background: var(--admin-input-bg);
+  color: var(--admin-input-text);
+  font: inherit;
+  padding: 0.78rem 0.92rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+.admin-message-modal__field textarea {
+  min-height: 7.8rem;
+  resize: vertical;
+}
+
+.admin-message-modal__field input:focus,
+.admin-message-modal__field textarea:focus {
+  outline: none;
+  border-color: var(--admin-theme-accent-border);
+  box-shadow: 0 0 0 3px var(--admin-theme-accent-soft);
+}
+
+.admin-message-modal__meta {
+  display: flex;
+  justify-content: flex-end;
+  color: var(--admin-text-muted);
+  font-size: 0.76rem;
+}
+
+.admin-message-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.7rem;
+}
+
+.admin-message-modal__button {
+  min-height: 2.7rem;
+  padding: 0 1rem;
+  border-radius: 0.92rem;
+  border: 1px solid var(--admin-border-color);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background-color 0.18s ease;
+}
+
+.admin-message-modal__button:disabled,
+.admin-message-modal__close:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.admin-message-modal__button--ghost {
+  background: var(--admin-bg-surface);
+  color: var(--admin-text-secondary);
+}
+
+.admin-message-modal__button--primary {
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--admin-theme-accent) 0%, #5b9f79 100%);
+  color: #ffffff;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.16);
+}
+
+.admin-message-modal__button:not(:disabled):hover,
+.admin-message-modal__close:not(:disabled):hover {
+  transform: translateY(-1px);
 }
 
 .admin-toast {
@@ -2759,10 +4266,10 @@ onBeforeUnmount(() => {
   width: min(28rem, calc(100% - 1.5rem));
   transform: none;
   padding: 0.95rem 1rem;
-  border: 1px solid rgba(22, 163, 74, 0.16);
+  border: 1px solid var(--admin-border-color);
   border-radius: 1rem;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.16);
+  background: var(--admin-bg-surface-elevated);
+  box-shadow: var(--admin-shadow-soft);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   gap: 0.85rem;
@@ -2798,13 +4305,13 @@ onBeforeUnmount(() => {
 }
 
 .admin-toast__copy strong {
-  color: #1f2937;
+  color: var(--admin-text-primary);
   font-size: 0.92rem;
   font-weight: 800;
 }
 
 .admin-toast__copy span {
-  color: #64748b;
+  color: var(--admin-text-secondary);
   font-size: 0.78rem;
   line-height: 1.45;
 }
@@ -2841,10 +4348,10 @@ onBeforeUnmount(() => {
 .admin-toast__close {
   width: 2rem;
   height: 2rem;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--admin-border-color);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.92);
-  color: #94a3b8;
+  background: var(--admin-bg-surface);
+  color: var(--admin-text-muted);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2856,9 +4363,9 @@ onBeforeUnmount(() => {
 }
 
 .admin-toast__close:hover {
-  background: #fff5f5;
-  border-color: #fecaca;
-  color: #dc2626;
+  background: var(--admin-bg-hover);
+  border-color: var(--admin-theme-accent-border);
+  color: var(--admin-theme-accent);
   transform: rotate(90deg);
 }
 
@@ -2890,7 +4397,7 @@ onBeforeUnmount(() => {
   display: grid;
   place-items: center;
   padding: 1.25rem;
-  background: rgba(15, 23, 42, 0.24);
+  background: var(--admin-bg-overlay);
   backdrop-filter: blur(10px);
 }
 
@@ -2898,10 +4405,10 @@ onBeforeUnmount(() => {
   width: min(52rem, calc(100vw - 2rem));
   max-height: calc(100vh - 2rem);
   overflow: auto;
-  border: 1px solid rgba(223, 227, 234, 0.96);
+  border: 1px solid var(--admin-border-color);
   border-radius: 1.4rem;
-  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
-  box-shadow: 0 24px 56px rgba(15, 23, 42, 0.18);
+  background: linear-gradient(180deg, var(--admin-bg-surface) 0%, var(--admin-bg-surface-muted) 100%);
+  box-shadow: var(--admin-shadow-strong);
 }
 
 .admin-settings-modal__header {
@@ -2910,7 +4417,7 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   gap: 1rem;
   padding: 1.2rem 1.2rem 1rem;
-  border-bottom: 1px solid rgba(226, 232, 240, 0.95);
+  border-bottom: 1px solid var(--admin-border-color);
 }
 
 .admin-settings-modal__eyebrow {
@@ -2925,25 +4432,25 @@ onBeforeUnmount(() => {
 
 .admin-settings-modal__header h2 {
   margin: 0;
-  color: #172033;
+  color: var(--admin-text-primary);
   font-size: 1.35rem;
 }
 
 .admin-settings-modal__header p {
   margin: 0.3rem 0 0;
-  color: #64748b;
+  color: var(--admin-text-secondary);
   font-size: 0.86rem;
 }
 
 .admin-settings-modal__close {
   width: 2.5rem;
   height: 2.5rem;
-  border: 1px solid rgba(226, 232, 240, 0.95);
+  border: 1px solid var(--admin-border-color);
   border-radius: 0.9rem;
   display: grid;
   place-items: center;
-  background: #ffffff;
-  color: #64748b;
+  background: var(--admin-bg-surface);
+  color: var(--admin-text-secondary);
   cursor: pointer;
 }
 
@@ -2969,8 +4476,8 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 0.7rem;
-  background: #f8fafc;
-  color: #334155;
+  background: var(--admin-bg-surface-muted);
+  color: var(--admin-text-secondary);
   font-size: 0.86rem;
   font-weight: 700;
   cursor: pointer;
@@ -2990,13 +4497,13 @@ onBeforeUnmount(() => {
 
 .admin-settings-section__head h3 {
   margin: 0;
-  color: #172033;
+  color: var(--admin-text-primary);
   font-size: 1.08rem;
 }
 
 .admin-settings-section__head p {
   margin: 0.3rem 0 0;
-  color: #64748b;
+  color: var(--admin-text-secondary);
   font-size: 0.84rem;
 }
 
@@ -3007,9 +4514,9 @@ onBeforeUnmount(() => {
   gap: 0.9rem;
   align-items: center;
   padding: 1rem;
-  border: 1px solid rgba(226, 232, 240, 0.95);
+  border: 1px solid var(--admin-border-color);
   border-radius: 1rem;
-  background: #ffffff;
+  background: var(--admin-bg-surface);
   cursor: pointer;
 }
 
@@ -3025,12 +4532,12 @@ onBeforeUnmount(() => {
 }
 
 .admin-settings-toggle__copy strong {
-  color: #1e293b;
+  color: var(--admin-text-primary);
   font-size: 0.92rem;
 }
 
 .admin-settings-toggle__copy span {
-  color: #64748b;
+  color: var(--admin-text-secondary);
   font-size: 0.8rem;
   line-height: 1.5;
 }
@@ -3040,7 +4547,7 @@ onBeforeUnmount(() => {
   height: 1.95rem;
   border-radius: 999px;
   position: relative;
-  background: #dbe4ee;
+  background: var(--admin-bg-hover);
   transition: background-color var(--admin-motion-duration) ease;
 }
 
@@ -3052,7 +4559,7 @@ onBeforeUnmount(() => {
   width: 1.55rem;
   height: 1.55rem;
   border-radius: 999px;
-  background: #ffffff;
+  background: var(--admin-bg-surface);
   box-shadow: 0 8px 18px rgba(15, 23, 42, 0.14);
   transition: transform var(--admin-motion-duration) ease;
 }
@@ -3072,13 +4579,13 @@ onBeforeUnmount(() => {
 }
 
 .admin-theme-card {
-  border: 1px solid rgba(226, 232, 240, 0.95);
+  border: 1px solid var(--admin-border-color);
   border-radius: 1rem;
   padding: 0.82rem;
   display: grid;
   gap: 0.55rem;
-  background: #ffffff;
-  color: #334155;
+  background: var(--admin-bg-surface);
+  color: var(--admin-text-secondary);
   text-align: left;
   cursor: pointer;
 }
@@ -3094,13 +4601,163 @@ onBeforeUnmount(() => {
 }
 
 .admin-theme-card strong {
-  color: #172033;
+  color: var(--admin-text-primary);
   font-size: 0.9rem;
 }
 
 .admin-theme-card span {
-  color: #64748b;
+  color: var(--admin-text-secondary);
   font-size: 0.78rem;
+}
+
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='toolbar-card']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='table-shell']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='-card']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='__card']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='-panel']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='__panel']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='-sheet']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='__sheet']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='-toolbar']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='-search']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='-summary']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='-empty']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='-notice']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='-toast']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='__toast']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='-message']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='__message']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='-switch']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='__switch']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='-dropzone']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='-lock']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='-filter']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='-surface']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='__surface']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='-access']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='-zone']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='-shell']) {
+  background: var(--admin-bg-surface) !important;
+  color: var(--admin-text-primary) !important;
+  border-color: var(--admin-border-color) !important;
+  box-shadow: var(--admin-shadow-soft) !important;
+}
+
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep(h1),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep(h2),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep(h3),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep(h4),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep(h5),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep(h6),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep(strong),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep(label),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='-title']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='__title']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='-heading']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='__heading']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='-label']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='__label']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='-value']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='__value']) {
+  color: var(--admin-text-primary) !important;
+}
+
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep(p),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep(small),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep(li),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep(dt),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep(dd),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep(th),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep(td),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='-copy']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='__copy']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='-meta']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='__meta']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='-detail']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='__detail']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='-subtitle']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='__subtitle']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='-subcopy']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='__subcopy']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='-identity']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='-summary']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='-message']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='-item']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='-check']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='-select']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='-empty']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='__identity']) {
+  color: var(--admin-text-secondary) !important;
+}
+
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep(input:not([type='checkbox']):not([type='radio']):not([type='file'])),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep(select),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep(textarea) {
+  background: var(--admin-input-bg) !important;
+  color: var(--admin-input-text) !important;
+  border-color: var(--admin-input-border) !important;
+}
+
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep(input:not([type='checkbox']):not([type='radio']):not([type='file'])::placeholder),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep(textarea::placeholder) {
+  color: var(--admin-input-placeholder) !important;
+}
+
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep(input[type='checkbox']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep(input[type='radio']) {
+  background: var(--admin-bg-surface-muted) !important;
+  border-color: var(--admin-input-border) !important;
+  color: var(--admin-input-text) !important;
+}
+
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep(input[type='checkbox']:checked),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep(input[type='radio']:checked) {
+  background: linear-gradient(135deg, var(--admin-theme-accent) 0%, #2fa66a 100%) !important;
+  border-color: var(--admin-theme-accent) !important;
+}
+
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='switch-indicator']) {
+  background: var(--admin-bg-surface-elevated) !important;
+  border: 1px solid var(--admin-border-color) !important;
+  box-shadow: var(--admin-shadow-soft) !important;
+}
+
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep(thead th) {
+  background: var(--admin-bg-surface-muted) !important;
+  color: var(--admin-text-secondary) !important;
+  border-color: var(--admin-border-color) !important;
+}
+
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep(tbody td),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='-row']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='__row']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='-item']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='__item']) {
+  background: transparent !important;
+  border-color: var(--admin-border-color) !important;
+}
+
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep(tbody tr:hover td),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='-row']:hover),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='__row']:hover),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='-item']:hover),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='__item']:hover) {
+  background: var(--admin-bg-hover) !important;
+}
+
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='ghost-btn']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='filter-btn']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='action-btn']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='-button']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='__button']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='__ghost']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='__submit']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='__close']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='__trigger']),
+.admin-shell[data-color-mode='dark'] .admin-view-stage :deep([class*='__option']) {
+  background: var(--admin-bg-surface-muted) !important;
+  color: var(--admin-text-primary) !important;
+  border-color: var(--admin-border-color) !important;
 }
 
 .admin-settings-modal-enter-active,
@@ -4013,6 +5670,17 @@ onBeforeUnmount(() => {
   gap: 0.14rem;
 }
 
+.dashboard-approved-row__meta-top {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.42rem;
+}
+
+.dashboard-approved-row__meta-top strong {
+  min-width: 0;
+}
+
 .dashboard-approved-row__meta strong {
   color: #1e293b;
   font-size: 0.9rem;
@@ -4310,6 +5978,30 @@ onBeforeUnmount(() => {
   gap: 0.32rem;
 }
 
+.admin-logs-item__title-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.admin-row-new-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.35rem;
+  padding: 0 0.45rem;
+  border-radius: 999px;
+  background: rgba(34, 197, 94, 0.14);
+  color: #18794e;
+  font-size: 0.64rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
 .admin-logs-item__body strong {
   color: #172033;
   font-size: 0.96rem;
@@ -4322,11 +6014,101 @@ onBeforeUnmount(() => {
   line-height: 1.55;
 }
 
+.admin-logs-item__summary {
+  color: #475569;
+  font-size: 0.8rem;
+}
+
+.admin-logs-item__details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.2rem;
+}
+
+.admin-logs-item__detail {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  padding: 0.34rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.05);
+  color: #475569;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.admin-logs-item__detail .bi {
+  color: #64748b;
+}
+
+.admin-logs-item__detail--event {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+.admin-logs-item__status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  min-height: 1.85rem;
+  padding: 0 0.72rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.admin-logs-item__status--notification {
+  background: #e8f1ff;
+  color: #315ea8;
+}
+
+.admin-logs-item__status--payment {
+  background: #e8f7ee;
+  color: #2d7a4b;
+}
+
+.admin-logs-item__status--danger {
+  background: #fdecec;
+  color: #b24a4a;
+}
+
 .admin-logs-item__time {
+  display: grid;
+  justify-items: end;
+  gap: 0.15rem;
   color: #94a3b8;
   font-size: 0.76rem;
   font-weight: 700;
   white-space: nowrap;
+}
+
+.admin-logs-item__time strong {
+  color: #475569;
+  font-size: 0.76rem;
+}
+
+.admin-logs-item__time small {
+  font-size: 0.72rem;
+  color: #94a3b8;
+}
+
+@media (max-width: 900px) {
+  .admin-logs-item {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-logs-item__title-row {
+    flex-wrap: wrap;
+  }
+
+  .admin-logs-item__time {
+    justify-items: start;
+    white-space: normal;
+  }
 }
 
 @keyframes dashboard-fade-up {

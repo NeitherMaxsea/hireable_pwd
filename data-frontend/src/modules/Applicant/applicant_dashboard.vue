@@ -277,6 +277,34 @@ const applicantAdminAccessNotifications = computed(() =>
     .filter((notice) => notice && notice.kind === 'admin-access-update'),
 )
 
+const applicantAdminDirectNotifications = computed(() =>
+  (Array.isArray(authUser.value?.admin_direct_messages)
+    ? authUser.value.admin_direct_messages
+    : Array.isArray(authUser.value?.adminDirectMessages)
+      ? authUser.value.adminDirectMessages
+      : [])
+    .map((message, index) => {
+      const notificationId = String(message?.id || `applicant-admin-message-${index + 1}`).trim()
+      const notificationCopy = String(message?.message || message?.copy || '').trim()
+      if (!notificationId || !notificationCopy) return null
+
+      const createdAtValue = Date.parse(String(message?.createdAt || message?.created_at || '').trim()) || Date.now()
+
+      return {
+        id: notificationId,
+        title: String(message?.title || 'Admin message').trim() || 'Admin message',
+        copy: notificationCopy,
+        message: notificationCopy,
+        section: 'admin-messages',
+        tone: String(message?.tone || 'accent').trim().toLowerCase() || 'accent',
+        kind: 'admin-direct-message',
+        createdAtValue,
+        timeLabel: formatApplicantNotificationTime(createdAtValue),
+      }
+    })
+    .filter(Boolean),
+)
+
 const hasApplicantGraceAccess = (moduleId) =>
   applicantAdminAccessNotifications.value.some((notice) =>
     notice.moduleId === String(moduleId || '').trim()
@@ -705,6 +733,7 @@ const handleApplicantNotificationOpen = (notification = {}) => {
     if (normalizedValue === 'job-offers') return 'Job Offers'
     if (normalizedValue === 'contracts') return 'Contracts'
     if (normalizedValue === 'technical-assessment') return 'Technical Assessment'
+    if (normalizedValue === 'admin-messages') return 'Admin Message'
     if (normalizedValue === 'find-jobs') return 'Find Jobs'
     if (normalizedValue === 'messages') return 'Inbox'
     if (normalizedValue === 'profile') return 'My Profile'
@@ -735,6 +764,7 @@ const closeApplicantNotificationDetail = () => {
 
 const applicantNotificationPrimaryActionLabel = computed(() => {
   const targetSection = String(selectedApplicantNotification.value?.section || '').trim()
+  if (targetSection === 'admin-messages') return 'Open workspace'
   if (targetSection === 'settings') return 'Open settings'
   if (targetSection === 'profile') return 'Open profile'
   if (targetSection === 'find-jobs') return 'Open jobs'
@@ -3025,6 +3055,7 @@ const getApplicantJobOfferState = (record = {}) => {
 
 const applicantNotifications = computed(() => {
   const accessUpdateItems = applicantAdminAccessNotifications.value
+  const directMessageItems = applicantAdminDirectNotifications.value
 
   const applicationItems = liveApplicantApplications.value
     .map((record) => {
@@ -3223,7 +3254,7 @@ const applicantNotifications = computed(() => {
     })
     .filter(Boolean)
 
-  return [...accessUpdateItems, ...applicationItems, ...jobOfferItems, ...interviewItems, ...assessmentItems]
+  return [...directMessageItems, ...accessUpdateItems, ...applicationItems, ...jobOfferItems, ...interviewItems, ...assessmentItems]
     .sort((left, right) => (right?.createdAtValue || 0) - (left?.createdAtValue || 0))
     .slice(0, 8)
 })

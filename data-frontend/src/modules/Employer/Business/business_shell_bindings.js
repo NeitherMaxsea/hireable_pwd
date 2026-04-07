@@ -1,28 +1,38 @@
 import { computed } from 'vue'
 
+const readRefValue = (source, fallback = undefined) =>
+  source && typeof source === 'object' && 'value' in source
+    ? source.value
+    : fallback
+
 export const createSidebarBindings = (ctx) => computed(() => ({
-  showBusinessSidebar: ctx.showBusinessSidebar.value,
+  showBusinessSidebar: readRefValue(ctx.showBusinessSidebar, false),
   pwdLogo: ctx.pwdLogo,
-  businessName: ctx.businessSidebarBrandName.value,
-  businessBrandSubtitle: ctx.businessSidebarBrandSubtitle.value,
-  profileName: ctx.loggedInBusinessUserName.value,
-  profileAvatar: ctx.loggedInBusinessUserAvatar.value,
-  profileInitials: ctx.loggedInBusinessUserInitials.value,
-  profileEmail: ctx.loggedInBusinessUserEmail.value,
-  profileRoleLabel: ctx.loggedInBusinessUserRoleLabel.value,
-  secondarySectionLabel: ctx.businessSidebarSecondarySectionLabel.value,
-  showBusinessSubscriptionShortcut: ctx.canAccessOwnerWorkspaceControls.value,
-  showBusinessProfileShortcut: ctx.canAccessOwnerWorkspaceControls.value,
-  sidebarGroups: ctx.sidebarGroups.value,
-  activeSection: ctx.activeSection.value,
-  activeSidebarGroup: ctx.activeSidebarGroup.value,
-  expandedSidebarGroups: ctx.expandedSidebarGroups.value,
+  businessName: readRefValue(ctx.businessSidebarBrandName, ''),
+  businessBrandSubtitle: readRefValue(ctx.businessSidebarBrandSubtitle, ''),
+  profileName: readRefValue(ctx.loggedInBusinessUserName, ''),
+  profileAvatar: readRefValue(ctx.loggedInBusinessUserAvatar, ''),
+  profileInitials: readRefValue(ctx.loggedInBusinessUserInitials, ''),
+  profileEmail: readRefValue(ctx.loggedInBusinessUserEmail, ''),
+  profileRoleLabel: readRefValue(ctx.loggedInBusinessUserRoleLabel, ''),
+  secondarySectionLabel: readRefValue(ctx.businessSidebarSecondarySectionLabel, ''),
+  showSubscriptionOnlySidebar: readRefValue(ctx.isBusinessSubscriptionSidebarLocked, false),
+  showBusinessSubscriptionShortcut:
+    readRefValue(ctx.canAccessOwnerWorkspaceControls, false)
+    && !readRefValue(ctx.isBusinessSubscriptionSidebarLocked, false),
+  showBusinessProfileShortcut:
+    readRefValue(ctx.canAccessOwnerWorkspaceControls, false)
+    && !readRefValue(ctx.isBusinessSubscriptionSidebarLocked, false),
+  sidebarGroups: readRefValue(ctx.sidebarGroups, []),
+  activeSection: readRefValue(ctx.activeSection, ''),
+  activeSidebarGroup: readRefValue(ctx.activeSidebarGroup, ''),
+  expandedSidebarGroups: readRefValue(ctx.expandedSidebarGroups, []),
   openSidebarGroup: ctx.openSidebarGroup,
   handleSidebarSectionClick: ctx.handleSidebarSectionClick,
   setSidebarLinkRef: ctx.setSidebarLinkRef,
   getSidebarItemIcon: ctx.getSidebarItemIcon,
   isPremiumGuideTarget: ctx.isPremiumGuideTarget,
-  isLogoutSubmitting: ctx.isLogoutSubmitting.value,
+  isLogoutSubmitting: readRefValue(ctx.isLogoutSubmitting, false),
   openLogoutConfirm: ctx.openLogoutConfirm,
   openBusinessSubscriptionSection: ctx.openBusinessSubscriptionSection,
   openBusinessProfileSection: ctx.openBusinessProfileSection,

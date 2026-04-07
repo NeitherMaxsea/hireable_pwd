@@ -11,6 +11,7 @@ const props = defineProps([
   'profileEmail',
   'profileRoleLabel',
   'secondarySectionLabel',
+  'showSubscriptionOnlySidebar',
   'showBusinessSubscriptionShortcut',
   'showBusinessProfileShortcut',
   'sidebarGroups',
@@ -38,6 +39,7 @@ const {
   profileEmail,
   profileRoleLabel,
   secondarySectionLabel,
+  showSubscriptionOnlySidebar,
   showBusinessSubscriptionShortcut,
   showBusinessProfileShortcut,
   sidebarGroups,
@@ -74,7 +76,21 @@ const {
 
       <TransitionGroup name="business-sidebar-reveal" tag="nav" class="business-sidebar__nav" aria-label="Business sidebar">
         <button
-          v-if="sidebarGroups.some((group) => group.id === 'dashboard' && group.items.some((item) => item.id === 'dashboard'))"
+          v-if="showSubscriptionOnlySidebar"
+          key="subscriptions-link"
+          type="button"
+          class="business-sidebar__link business-sidebar__link--group"
+          :class="{ 'is-active': activeSection === 'subscriptions' }"
+          @click="openBusinessSubscriptionSection"
+        >
+          <span class="business-sidebar__link-main">
+            <i class="bi bi-stars" aria-hidden="true" />
+            <span>Subscriptions</span>
+          </span>
+        </button>
+
+        <button
+          v-else-if="sidebarGroups.some((group) => group.id === 'dashboard' && group.items.some((item) => item.id === 'dashboard'))"
           key="dashboard-link"
           type="button"
           class="business-sidebar__link business-sidebar__link--group"
@@ -88,6 +104,7 @@ const {
         </button>
 
         <div
+          v-if="!showSubscriptionOnlySidebar"
           v-for="group in sidebarGroups.filter((entry) => entry.id !== 'dashboard')"
           :key="group.id"
           class="business-sidebar__dropdown-group"

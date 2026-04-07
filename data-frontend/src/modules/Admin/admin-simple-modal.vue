@@ -76,7 +76,7 @@ const headingId = computed(() =>
   padding: 1rem;
   display: grid;
   place-items: center;
-  background: rgba(18, 27, 22, 0.42);
+  background: var(--admin-bg-overlay, rgba(18, 27, 22, 0.42));
 }
 
 .admin-simple-modal__card {
@@ -84,9 +84,9 @@ const headingId = computed(() =>
   max-height: min(88vh, 46rem);
   overflow: auto;
   border-radius: 1rem;
-  border: 1px solid rgba(124, 166, 140, 0.18);
-  background: #fff;
-  box-shadow: 0 24px 44px rgba(25, 39, 31, 0.14);
+  border: 1px solid var(--admin-border-color, rgba(124, 166, 140, 0.18));
+  background: var(--admin-bg-surface, #fff);
+  box-shadow: var(--admin-shadow-strong, 0 24px 44px rgba(25, 39, 31, 0.14));
 }
 
 .admin-simple-modal__head {
@@ -95,7 +95,7 @@ const headingId = computed(() =>
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
-  border-bottom: 1px solid rgba(122, 179, 145, 0.12);
+  border-bottom: 1px solid var(--admin-border-color, rgba(122, 179, 145, 0.12));
 }
 
 .admin-simple-modal__copy {
@@ -105,25 +105,25 @@ const headingId = computed(() =>
 
 .admin-simple-modal__copy h2 {
   margin: 0;
-  color: #244132;
+  color: var(--admin-text-primary, #244132);
   font-size: 1rem;
   font-weight: 700;
 }
 
 .admin-simple-modal__copy p {
   margin: 0;
-  color: #678070;
+  color: var(--admin-text-secondary, #678070);
   font-size: 0.82rem;
   line-height: 1.5;
 }
 
 .admin-simple-modal__close {
   min-height: 2.25rem;
-  border: 1px solid rgba(122, 179, 145, 0.18);
+  border: 1px solid var(--admin-border-color, rgba(122, 179, 145, 0.18));
   border-radius: 0.7rem;
   padding: 0 0.85rem;
-  background: #fff;
-  color: #476857;
+  background: var(--admin-bg-surface-muted, #fff);
+  color: var(--admin-text-secondary, #476857);
   font: inherit;
   font-size: 0.82rem;
   font-weight: 700;

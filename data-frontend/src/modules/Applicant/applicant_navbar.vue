@@ -116,6 +116,7 @@ const getNotificationSectionLabel = (value) => {
   if (normalizedValue === 'job-offers') return 'Job Offers'
   if (normalizedValue === 'contracts') return 'Contracts'
   if (normalizedValue === 'technical-assessment') return 'Technical Assessment'
+  if (normalizedValue === 'admin-messages') return 'Admin Message'
   if (normalizedValue === 'settings') return 'Workspace'
   return 'Updates'
 }
@@ -142,6 +143,10 @@ const getNotificationIconClass = (section, tone) => {
 
   if (normalizedSection === 'technical-assessment') {
     return normalizedTone === 'danger' ? 'bi bi-exclamation-diamond-fill' : 'bi bi-ui-checks-grid'
+  }
+
+  if (normalizedSection === 'admin-messages') {
+    return normalizedTone === 'danger' ? 'bi bi-megaphone-fill' : 'bi bi-chat-dots-fill'
   }
 
   if (normalizedSection === 'settings') {

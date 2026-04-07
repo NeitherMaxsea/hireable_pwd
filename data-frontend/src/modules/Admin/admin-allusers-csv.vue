@@ -42,7 +42,7 @@ const exportUsersToExcel = async () => {
     user.name,
     user.email,
     user.role,
-    user.status,
+    user.exportStatus || user.status,
     props.formatDate(user.date),
   ]))
 
@@ -117,7 +117,7 @@ const printUsers = () => {
       <td>${user.name}</td>
       <td>${user.email}</td>
       <td>${user.role}</td>
-      <td>${user.status}</td>
+      <td>${user.exportStatus || user.status}</td>
       <td>${props.formatDate(user.date)}</td>
     </tr>
   `).join('')

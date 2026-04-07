@@ -2,12 +2,10 @@
 import { computed, ref } from 'vue'
 import { createAdminManagedAccount } from '@/lib/auth'
 
-const emit = defineEmits(['created'])
+const emit = defineEmits(['created', 'toast'])
 
 const accountType = ref('applicant')
 const isSubmitting = ref(false)
-const formError = ref('')
-const successMessage = ref('')
 const applicantPwdIdFrontFile = ref(null)
 const applicantPwdIdBackFile = ref(null)
 
@@ -49,7 +47,7 @@ const sheetTitle = computed(() => (
 const sheetCopy = computed(() => (
   accountType.value === 'applicant'
     ? 'Enter the applicant details below to create a managed PWD applicant account.'
-    : 'Enter the company details below to create a managed business account.'
+    : 'Enter the business details below to create a managed business account.'
 ))
 
 const switchIndicatorStyle = computed(() => ({
@@ -57,6 +55,50 @@ const switchIndicatorStyle = computed(() => ({
     ? 'translateX(calc(100% + 0.3rem))'
     : 'translateX(0)',
 }))
+
+const businessIndustryOptions = [
+  'Information Technology (IT) / Software Development',
+  'Business Process Outsourcing (BPO) / Customer Support',
+  'Retail / Sales / Merchandising',
+  'Wholesale / Distribution',
+  'Manufacturing / Production',
+  'Construction / Engineering / Infrastructure',
+  'Logistics / Transportation / Supply Chain',
+  'Automotive / Vehicle Services',
+  'Banking / Finance / Accounting',
+  'Insurance',
+  'Marketing / Advertising / Public Relations',
+  'Human Resources / Recruitment / Consulting',
+  'Legal Services',
+  'Healthcare / Medical / Clinics / Hospitals',
+  'Pharmaceuticals / Biotechnology',
+  'Education / Training / Academic Institutions',
+  'Government / Public Sector',
+  'Non-Government Organization (NGO) / Social Services',
+  'Hospitality / Hotels / Restaurants',
+  'Tourism / Travel Services',
+  'Food & Beverage Production / Services',
+  'Real Estate / Property Management',
+  'Media / Entertainment / Broadcasting',
+  'Creative / Design / Multimedia',
+  'E-commerce / Online Business',
+  'Telecommunications / Networking',
+  'Energy / Power / Utilities',
+  'Agriculture / Farming / Agribusiness',
+  'Fisheries / Aquaculture',
+  'Mining / Natural Resources',
+  'Security / Safety Services',
+  'Cleaning / Maintenance / Facilities Services',
+  'Personal Services (Salon, Spa, etc.)',
+  'Printing / Publishing',
+  'Research / Development / Science',
+  'Other',
+]
+
+const normalizeBusinessContactNumber = (value) =>
+  String(value || '')
+    .replace(/\D+/g, '')
+    .slice(0, 11)
 
 const calculateAge = (birthdate) => {
   const parsedDate = new Date(birthdate)
@@ -97,20 +139,26 @@ const handleApplicantFileChange = (event, side) => {
   applicantPwdIdBackFile.value = file
 }
 
-const resetMessages = () => {
-  formError.value = ''
-  successMessage.value = ''
+const showToast = (message, kind = 'info', title = '') => {
+  const normalizedMessage = String(message || '').trim()
+  if (!normalizedMessage) return
+  emit('toast', {
+    message: normalizedMessage,
+    kind,
+    title: String(title || '').trim(),
+  })
+}
+
+const handleBusinessContactInput = () => {
+  businessForm.value.contactNumber = normalizeBusinessContactNumber(businessForm.value.contactNumber)
 }
 
 const switchAccountType = (nextType) => {
   if (!['business', 'applicant'].includes(nextType)) return
   accountType.value = nextType
-  resetMessages()
 }
 
 const resetActiveForm = () => {
-  resetMessages()
-
   if (accountType.value === 'applicant') {
     applicantForm.value = {
       isNewEmployee: false,
@@ -145,7 +193,14 @@ const resetActiveForm = () => {
 }
 
 const submitCreateUser = async () => {
-  resetMessages()
+  if (accountType.value === 'business') {
+    businessForm.value.contactNumber = normalizeBusinessContactNumber(businessForm.value.contactNumber)
+    if (businessForm.value.contactNumber.length !== 11) {
+      showToast('Business contact number must be exactly 11 digits.', 'error', 'Create User Failed')
+      return
+    }
+  }
+
   isSubmitting.value = true
 
   try {
@@ -169,14 +224,17 @@ const submitCreateUser = async () => {
       || 'New account',
     ).trim()
 
-    successMessage.value = `${createdName} was created successfully.`
+    const successMessage = `${createdName} was created successfully.`
     resetActiveForm()
     emit('created', {
       accountType: accountType.value,
       user: createdUser,
+      message: successMessage,
+      kind: 'success',
+      title: 'User Created',
     })
   } catch (error) {
-    formError.value = error instanceof Error ? error.message : 'Unable to create the user right now.'
+    showToast(error instanceof Error ? error.message : 'Unable to create the user right now.', 'error', 'Create User Failed')
   } finally {
     isSubmitting.value = false
   }
@@ -357,18 +415,37 @@ const submitCreateUser = async () => {
           <template v-else>
             <div class="admin-create-user__grid admin-create-user__grid--three">
               <label class="admin-create-user__field">
-                <span>Company Name*</span>
-                <input v-model.trim="businessForm.companyName" type="text" placeholder="Enter company name" required>
+                <span>Business Name*</span>
+                <input v-model.trim="businessForm.companyName" type="text" placeholder="Enter business name" required>
               </label>
 
               <label class="admin-create-user__field">
                 <span>Industry*</span>
-                <input v-model.trim="businessForm.companyIndustry" type="text" placeholder="Enter industry" required>
+                <select v-model="businessForm.companyIndustry" required>
+                  <option disabled value="">Select industry</option>
+                  <option
+                    v-for="option in businessIndustryOptions"
+                    :key="option"
+                    :value="option"
+                  >
+                    {{ option }}
+                  </option>
+                </select>
               </label>
 
               <label class="admin-create-user__field">
-                <span>Contact Number</span>
-                <input v-model.trim="businessForm.contactNumber" type="text" placeholder="Enter contact number">
+                <span>Contact Number*</span>
+                <input
+                  v-model="businessForm.contactNumber"
+                  type="text"
+                  inputmode="numeric"
+                  autocomplete="tel-national"
+                  maxlength="11"
+                  placeholder="Enter 11-digit contact number"
+                  required
+                  @input="handleBusinessContactInput"
+                >
+                <small>Numbers only. Use exactly 11 digits.</small>
               </label>
             </div>
 
@@ -386,9 +463,6 @@ const submitCreateUser = async () => {
           </template>
         </div>
       </Transition>
-
-      <p v-if="formError" class="admin-create-user__message admin-create-user__message--error">{{ formError }}</p>
-      <p v-if="successMessage" class="admin-create-user__message admin-create-user__message--success">{{ successMessage }}</p>
 
       <div class="admin-create-user__actions">
         <button type="button" class="admin-create-user__ghost" :disabled="isSubmitting" @click="resetActiveForm">
