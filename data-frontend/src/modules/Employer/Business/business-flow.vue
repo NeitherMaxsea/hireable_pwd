@@ -1450,10 +1450,35 @@ const jobPostingCreatedPreview = new Intl.DateTimeFormat('en-US', {
   day: '2-digit',
   year: 'numeric',
 }).format(new Date())
+const JOB_POSTING_DISABILITY_TYPE_LOOKUP = new Map(
+  JOB_POSTING_DISABILITY_TYPES.map((entry) => [
+    String(entry?.value || '').trim(),
+    String(entry?.label || entry?.value || '').trim(),
+  ]),
+)
+const normalizeJobPostingDisabilityTypes = (value) => {
+  const sourceValues = Array.isArray(value) ? value : [value]
+
+  return [...new Set(
+    sourceValues
+      .flatMap((entry) => String(entry || '').split(/[\r\n,]+/))
+      .map((entry) => entry.trim())
+      .filter(Boolean),
+  )]
+}
+const serializeJobPostingDisabilityTypes = (value) =>
+  normalizeJobPostingDisabilityTypes(value).join(', ')
+const resolveJobPostingDisabilityTypeLabel = (value) =>
+  JOB_POSTING_DISABILITY_TYPE_LOOKUP.get(String(value || '').trim()) || String(value || '').trim()
 const jobPostingQualificationsPreview = computed(() => toJobPostingLineItems(jobPostingDraft.value.qualifications))
 const jobPostingResponsibilitiesPreview = computed(() => toJobPostingLineItems(jobPostingDraft.value.responsibilities))
+const jobPostingSelectedDisabilityTypes = computed(() =>
+  normalizeJobPostingDisabilityTypes(jobPostingDraft.value.disabilityType),
+)
 const jobPostingDisabilityTypeNeedsSpecification = computed(() =>
-  JOB_POSTING_DISABILITY_TYPES_REQUIRING_SPECIFICATION.has(String(jobPostingDraft.value.disabilityType || '').trim()),
+  jobPostingSelectedDisabilityTypes.value.some((entry) =>
+    JOB_POSTING_DISABILITY_TYPES_REQUIRING_SPECIFICATION.has(String(entry || '').trim()),
+  ),
 )
 const jobPostingTypeLabel = computed(() =>
   String(jobPostingDraft.value.type || '').trim() || 'Select job type',
@@ -1461,9 +1486,15 @@ const jobPostingTypeLabel = computed(() =>
 const jobPostingBarangayLabel = computed(() =>
   JOB_POSTING_BARANGAYS.find((entry) => entry.value === jobPostingDraft.value.barangay)?.label || 'Select barangay',
 )
-const jobPostingDisabilityLabel = computed(() =>
-  JOB_POSTING_DISABILITY_TYPES.find((entry) => entry.value === jobPostingDraft.value.disabilityType)?.label || 'Select disability type',
-)
+const jobPostingDisabilityLabel = computed(() => {
+  const selectedLabels = jobPostingSelectedDisabilityTypes.value
+    .map((entry) => resolveJobPostingDisabilityTypeLabel(entry))
+    .filter(Boolean)
+
+  if (!selectedLabels.length) return 'Select disability types'
+  if (selectedLabels.length <= 2) return selectedLabels.join(', ')
+  return `${selectedLabels.slice(0, 2).join(', ')} +${selectedLabels.length - 2} more`
+})
 const jobPostingLanguageLabel = computed(() =>
   JOB_POSTING_LANGUAGE_OPTIONS.find((entry) => entry.value === jobPostingDraft.value.language)?.label || 'Select language',
 )
@@ -1527,7 +1558,7 @@ const createPostedJobRecord = (record = {}) => ({
   vacancies: Math.max(1, Number(record.vacancies || 1) || 1),
   salary: String(record.salary || record.salaryRange || 'Negotiable').trim(),
   salaryRange: String(record.salaryRange || record.salary || 'Negotiable').trim(),
-  disabilityType: String(record.disabilityType || '').trim(),
+  disabilityType: serializeJobPostingDisabilityTypes(record.disabilityType || record.disabilityTypes),
   impairmentSpecification: String(record.impairmentSpecification || '').trim(),
   preferredAgeRange: String(record.preferredAgeRange || '').trim(),
   language: String(record.language || '').trim(),
@@ -1616,7 +1647,7 @@ const createJobPostingDraftFromRecord = (job = {}) => ({
   barangay: String(job.barangay || '').trim(),
   vacancies: String(job.vacancies || ''),
   salaryRange: String(job.salaryRange || job.salary || '').trim(),
-  disabilityType: String(job.disabilityType || '').trim(),
+  disabilityType: serializeJobPostingDisabilityTypes(job.disabilityType || job.disabilityTypes),
   impairmentSpecification: String(job.impairmentSpecification || '').trim(),
   preferredAgeRange: String(job.preferredAgeRange || '').trim(),
   language: String(job.language || '').trim(),
@@ -4192,12 +4223,15 @@ const normalizeJobPostingDraftInput = (draft = {}) => ({
 })
 const handleJobPostingFieldChange = (key, value) => {
   if (key === 'disabilityType') {
+    const normalizedDisabilityType = serializeJobPostingDisabilityTypes(value)
+    const shouldKeepSpecification = normalizeJobPostingDisabilityTypes(normalizedDisabilityType).some((entry) =>
+      JOB_POSTING_DISABILITY_TYPES_REQUIRING_SPECIFICATION.has(String(entry || '').trim()),
+    )
+
     jobPostingDraft.value = {
       ...jobPostingDraft.value,
-      disabilityType: value,
-      impairmentSpecification: JOB_POSTING_DISABILITY_TYPES_REQUIRING_SPECIFICATION.has(String(value || '').trim())
-        ? jobPostingDraft.value.impairmentSpecification
-        : '',
+      disabilityType: normalizedDisabilityType,
+      impairmentSpecification: shouldKeepSpecification ? jobPostingDraft.value.impairmentSpecification : '',
     }
     return
   }
@@ -4266,6 +4300,9 @@ const handleJobPostingFieldChange = (key, value) => {
     [key]: value,
   }
 }
+const setJobPostingDisabilityTypes = (values = []) => {
+  handleJobPostingFieldChange('disabilityType', values)
+}
 const saveJobPost = async () => {
   if (!canEditBusinessModule('job-posting')) {
     showPaymentToast('Your role has view-only access for Job Posting.', 'warning')
@@ -4292,18 +4329,14 @@ const saveJobPost = async () => {
     ['language', normalizedJobPostingDraft.language],
     ['qualifications', normalizedJobPostingDraft.qualifications],
     ['responsibilities', normalizedJobPostingDraft.responsibilities],
-  ].concat(
-    jobPostingDisabilityTypeNeedsSpecification.value
-      ? [['impairment specification', normalizedJobPostingDraft.impairmentSpecification]]
-      : [],
-  )
+  ]
 
   const missingFields = requiredFields
     .filter(([, value]) => String(value ?? '').trim() === '')
     .map(([label]) => label)
 
   if (missingFields.length) {
-    showPaymentToast(`Please complete your ${missingFields.join(', ')}.`, 'warning')
+    showPaymentToast(`Please complete these fields before posting: ${missingFields.join(', ')}.`, 'warning')
     return false
   }
 
@@ -4479,14 +4512,22 @@ const formatJobPostingSalaryRangeInput = (value) => {
 }
 
 const buildJobPostingDisabilityFitLabel = (disabilityType, impairmentSpecification) => {
-  const category = String(disabilityType || '').trim()
+  const category = normalizeJobPostingDisabilityTypes(disabilityType)
+    .map((entry) => resolveJobPostingDisabilityTypeLabel(entry))
+    .join(', ')
   const specification = String(impairmentSpecification || '').trim()
   if (category && specification) return `${category} - ${specification}`
   return category || specification
 }
 
 const getJobPostingImpairmentSpecificationPlaceholder = (disabilityType) => {
-  switch (String(disabilityType || '').trim()) {
+  const normalizedDisabilityTypes = normalizeJobPostingDisabilityTypes(disabilityType)
+
+  if (normalizedDisabilityTypes.length > 1) {
+    return 'Example: Limited hand mobility, low vision, hard of hearing'
+  }
+
+  switch (normalizedDisabilityTypes[0] || '') {
     case 'Physical Impairment':
       return 'Example: Right leg, left arm, limited hand mobility'
     case 'Visual Impairment':
@@ -9637,6 +9678,13 @@ const getPaymentToastTitle = (message, tone = 'error') => {
   return 'Error'
 }
 
+const getPaymentToastIconClass = (tone = 'error') => {
+  const normalizedTone = String(tone || 'error').trim().toLowerCase()
+  if (normalizedTone === 'success') return 'bi bi-check2-circle'
+  if (normalizedTone === 'warning') return 'bi bi-exclamation-triangle'
+  return 'bi bi-x-circle'
+}
+
 const closePaymentToast = () => {
   clearPaymentToastTimeout()
   assignPaymentToastState()
@@ -10727,6 +10775,7 @@ const recruitmentBindings = createRecruitmentBindings({
   isEditingJobPost,
   postedJobs,
   activeSubscriptionPlan,
+  showPaymentToast,
   canEditBusinessModule,
   toggleJobPostingTab,
   saveJobPost,
@@ -10743,7 +10792,9 @@ const recruitmentBindings = createRecruitmentBindings({
   JOB_POSTING_MAX_VACANCIES,
   JOB_POSTING_DISABILITY_TYPES,
   jobPostingDisabilityLabel,
+  jobPostingSelectedDisabilityTypes,
   jobPostingDisabilityTypeNeedsSpecification,
+  setJobPostingDisabilityTypes,
   getJobPostingImpairmentSpecificationPlaceholder,
   JOB_POSTING_LANGUAGE_OPTIONS,
   jobPostingLanguageLabel,
@@ -12176,6 +12227,47 @@ onBeforeUnmount(() => {
       @update:form-response-deadline="setBusinessIssueOfferField('responseDeadline', $event)"
       @update:form-offer-letter="setBusinessIssueOfferField('offerLetter', $event)"
     />
+
+    <Transition name="business-toast">
+      <div
+        v-if="paymentToast.visible"
+        class="business-toast"
+        :class="paymentToast.tone"
+        role="status"
+        aria-live="polite"
+      >
+        <div class="business-toast__icon" :class="paymentToast.tone">
+          <i :class="getPaymentToastIconClass(paymentToast.tone)" aria-hidden="true" />
+        </div>
+
+        <div class="business-toast__copy">
+          <strong>{{ paymentToast.title || 'Notice' }}</strong>
+          <span>{{ paymentToast.message }}</span>
+        </div>
+
+        <div v-if="paymentToast.actions.length" class="business-toast__actions">
+          <button
+            v-for="(action, index) in paymentToast.actions"
+            :key="`${action.label}-${index}`"
+            type="button"
+            class="business-toast__action"
+            :class="`is-${action.variant || 'primary'}`"
+            @click="handlePaymentToastAction(action)"
+          >
+            {{ action.label }}
+          </button>
+        </div>
+
+        <button
+          type="button"
+          class="business-toast__close"
+          aria-label="Close notification"
+          @click="closePaymentToast"
+        >
+          <i class="bi bi-x-lg" aria-hidden="true" />
+        </button>
+      </div>
+    </Transition>
   </div>
 </template>
 

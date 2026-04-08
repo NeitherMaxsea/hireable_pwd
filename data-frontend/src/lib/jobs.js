@@ -320,15 +320,21 @@ const shouldTryPublishJobFunctionFallback = (error) => {
 }
 const shouldTryManagedJobFunctionFallback = (error) => {
   const code = text(error?.code).toLowerCase()
+  if (!code) return true
+
   return [
     'functions/not-found',
     'not-found',
     'functions/internal',
     'internal',
+    'functions/unknown',
+    'unknown',
     'functions/unimplemented',
     'unimplemented',
     'functions/unavailable',
     'unavailable',
+    'functions/resource-exhausted',
+    'resource-exhausted',
     'functions/deadline-exceeded',
     'deadline-exceeded',
     'functions/timeout',

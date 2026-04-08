@@ -63,7 +63,7 @@ const applicantRegistrationSteps = [
     isVirtual: true,
     icon: 'bi bi-camera-video',
     title: 'Face Verification',
-    description: 'Complete your live face scan before continuing.',
+    description: 'Capture or upload a clear face photo before continuing.',
   },
   {
     id: 'pwd',
@@ -259,7 +259,7 @@ const applicantStepHeader = computed(() => {
   if (applicantStep.value === 1 && isInlineClientVerificationActive.value) {
     return {
       title: 'Step 2: Face Verification',
-      description: 'Please turn on your device camera. The face scan will start automatically.',
+      description: 'Capture or upload a clear face photo to continue to the next step.',
     }
   }
 
@@ -1947,7 +1947,7 @@ const removeApplicantImage = (event) => {
   const imageInput = document.getElementById('reg-profile-image')
   if (imageInput) imageInput.value = ''
   if (isApplicantRegistration.value && applicantStep.value >= 2) {
-    notify('Please use the face scan panel on Step 1 if you need to verify again.', 'info')
+    notify('Please use the face verification panel on Step 1 if you need to capture again.', 'info')
   }
 }
 
@@ -2343,7 +2343,7 @@ const nextApplicantStep = () => {
       stepTransitionLoading.value = false
       stepTransitionStatus.value = ''
       isInlineClientVerificationActive.value = true
-      notify('Please allow camera access. Face scan will start automatically.', 'info')
+      notify('Open the camera and capture a clear face photo, or upload one to continue.', 'info')
     }, 650)
     return
   }
@@ -2929,7 +2929,7 @@ onBeforeUnmount(() => {
               ? 'Redirecting to login while your account waits for admin approval...'
               : stepTransitionLoading
                 ? stepTransitionStatus === 'face-verification'
-                  ? 'Preparing your device camera for face verification...'
+                  ? 'Preparing your camera for face verification...'
                   : `Proceeding to Step ${Math.min((isEmployerRegistration ? employerStep : applicantStep) + 1, 3)}...`
                 : 'Please wait while we process your registration details...'
           }}

@@ -6,8 +6,8 @@ import { clearAuthSession, getStoredAuthUser } from '@/lib/auth'
 
 const router = useRouter()
 const workspaceError = ref('')
-const BUSINESS_WORKSPACE_REFRESH_QUERY_KEY = 'workspaceRefresh'
 const BUSINESS_WORKSPACE_AUTO_RECOVERY_KEY = 'businessWorkspaceAutoRecovery'
+const workspaceRenderKey = ref(0)
 const storedUser = computed(() => getStoredAuthUser())
 const businessName = computed(() =>
   String(storedUser.value?.company_name || storedUser.value?.name || 'Business Workspace').trim() || 'Business Workspace',
@@ -25,17 +25,9 @@ const workspaceErrorMessage = computed(() => {
   return 'The workspace could not finish loading. Reload the workspace to continue.'
 })
 
-const buildWorkspaceReloadLocation = () => {
-  if (typeof window === 'undefined') return '/employer/business'
-
-  const nextUrl = new URL(window.location.href)
-  nextUrl.searchParams.set(BUSINESS_WORKSPACE_REFRESH_QUERY_KEY, String(Date.now()))
-  return `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`
-}
-
 const recoverBusinessWorkspace = () => {
-  if (typeof window === 'undefined') return
-  window.location.assign(buildWorkspaceReloadLocation())
+  workspaceError.value = ''
+  workspaceRenderKey.value += 1
 }
 
 onErrorCaptured((error, instance, info) => {
@@ -79,7 +71,7 @@ const goToLogin = async () => {
 </script>
 
 <template>
-  <BusinessWorkspaceFlow v-if="!workspaceError" />
+  <BusinessWorkspaceFlow v-if="!workspaceError" :key="workspaceRenderKey" />
 
   <section v-else class="business-dashboard-fallback">
     <article class="business-dashboard-fallback__card">

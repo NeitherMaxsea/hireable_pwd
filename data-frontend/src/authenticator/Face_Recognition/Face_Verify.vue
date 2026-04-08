@@ -24,7 +24,7 @@ const props = defineProps({
   },
   headerDescription: {
     type: String,
-    default: 'Only a real, clear, live face inside the guide can continue to Step 2.',
+    default: 'Capture or upload a clear face photo to continue to the next step.',
   },
   autoStart: {
     type: Boolean,
@@ -33,6 +33,8 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['selfie-selected', 'status-change', 'complete'])
+const MAX_SELFIE_UPLOAD_BYTES = 4_000_000
+const uploadInputId = `client-verification-upload-${Math.random().toString(36).slice(2, 9)}`
 
 const verificationMode = ref('guide')
 const selectedCameraMode = ref('user')
@@ -228,49 +230,26 @@ const scanFrameStyle = computed(() => ({
   opacity: guideFrameBox.value.opacity,
 }))
 
+const hasCaptureStageStarted = computed(() =>
+  isCameraReady.value || isAutoSubmitting.value || isScanSuccessful.value || props.hasSelfie,
+)
+
 const statusMessage = computed(() => {
-  if (props.hasSelfie) return 'Face verified. Redirecting to Step 2.'
-  if (isScanSuccessful.value) return 'Verification successful. Preparing Step 2...'
-  if (isAutoSubmitting.value) return 'Face detected. Saving your verified face scan...'
+  if (props.hasSelfie) return 'Face photo saved. Returning to the registration form.'
+  if (isScanSuccessful.value) return 'Face photo captured. Preparing the next step...'
+  if (isAutoSubmitting.value) return 'Saving your face photo...'
   if (isCameraStarting.value) return 'Starting your device camera. Please wait...'
   if (cameraError.value) return cameraError.value
 
-  switch (detectionPhase.value) {
-    case 'face_missing':
-      return 'Face not detected. Move closer to the camera and keep your full face inside the guide.'
-    case 'off_center':
-      return 'Center your face inside the guide and keep your whole face visible.'
-    case 'multiple_faces':
-      return 'Only one face is allowed in the camera. Remove other faces from view.'
-    case 'too_small':
-      return 'Your face is too far from the camera. Move closer until it fills more of the guide.'
-    case 'too_large':
-      return 'Move a little farther so your face fits inside the guide.'
-    case 'too_blurry':
-      return 'Face is too blurry. Hold still and improve camera focus.'
-    case 'look_straight':
-      return 'Keep your face centered and both eyes clearly visible.'
-    case 'blink_once':
-      return 'Blink once to prove you are a live person.'
-    case 'blink_failed':
-      return 'Blink challenge failed. Please blink once and try again.'
-    case 'phone_detected':
-      return 'Phone or screen detected. Using a phone image is not allowed for face verification.'
-    case 'verifying':
-      return 'Face detected. Hold still while we capture your selfie.'
-    case 'unsupported':
-      return 'Automatic face detection is unavailable right now. Restart the camera and try again.'
-    case 'ready':
-    case 'align':
-    default:
-      return 'Align your face inside the frame, keep steady, and look straight at the camera.'
+  if (isCameraReady.value) {
+    return 'Keep your face inside the guide, then tap Capture to continue.'
   }
+
+  return 'Open the camera or upload a clear face photo to continue.'
 })
 
 const overlayMessageClass = computed(() => ({
-  'is-warning': ['face_missing', 'off_center', 'multiple_faces', 'too_small', 'too_large', 'too_blurry', 'look_straight', 'unsupported', 'blink_failed', 'phone_detected'].includes(
-    detectionPhase.value,
-  ),
+  'is-warning': Boolean(cameraError.value),
   'is-success': isScanSuccessful.value,
 }))
 
@@ -315,6 +294,27 @@ const resetDetectionProgress = () => {
   isScanSuccessful.value = false
   detectionPhase.value = 'idle'
   isDetectorFallbackMode.value = false
+}
+
+const setManualGuideFrame = async () => {
+  await nextTick()
+  const viewer = viewerRef.value
+  if (!viewer) return
+
+  const viewerWidth = viewer.clientWidth
+  const viewerHeight = viewer.clientHeight
+  if (!viewerWidth || !viewerHeight) return
+
+  const width = Math.min(viewerWidth * 0.58, 330)
+  const height = Math.min(viewerHeight * 0.72, 410)
+
+  guideFrameBox.value = {
+    left: (viewerWidth - width) / 2,
+    top: (viewerHeight - height) / 2,
+    width,
+    height,
+    opacity: 1,
+  }
 }
 
 const computeFaceMetrics = (context, faceBox, frameWidth, frameHeight) => {
@@ -804,15 +804,8 @@ const startCamera = async () => {
     return
   }
   stopCamera()
-  resetLivenessState()
   isCameraStarting.value = true
   cameraError.value = ''
-  if (!(await ensureFaceDetector())) {
-    isCameraStarting.value = false
-    return
-  }
-  await ensureLandmarkDetector()
-  void ensureObjectDetector()
 
   try {
     stream.value = await navigator.mediaDevices.getUserMedia({
@@ -827,7 +820,7 @@ const startCamera = async () => {
     isCameraReady.value = true
     isCameraStarting.value = false
     await syncVideoStream()
-    startMockDetection()
+    await setManualGuideFrame()
   } catch {
     isCameraStarting.value = false
     cameraError.value = 'Camera access was blocked. Allow camera permission to continue.'
@@ -845,6 +838,27 @@ const completeVerification = (file) => {
   stopCamera()
   emit('selfie-selected', file)
   emit('complete')
+}
+
+const handleCaptureAndContinue = async () => {
+  if (!isCameraReady.value || isAutoSubmitting.value) return
+
+  cameraError.value = ''
+  isAutoSubmitting.value = true
+
+  const file = await captureSelfieFromVideo()
+  if (!file) {
+    isAutoSubmitting.value = false
+    cameraError.value = 'Unable to capture the face photo. Please try again.'
+    return
+  }
+
+  isScanSuccessful.value = true
+  clearSuccessTimer()
+  successTimerId = window.setTimeout(() => {
+    successTimerId = null
+    completeVerification(file)
+  }, 180)
 }
 
 const runDetection = async () => {
@@ -1122,9 +1136,25 @@ const autoCaptureAndContinue = async () => {
 }
 
 const handleSelfieUpload = (event) => {
-  const file = event?.target?.files?.[0] || null
+  const input = event?.target instanceof HTMLInputElement ? event.target : null
+  const file = input?.files?.[0] || null
   if (!file) return
+
+  if (!file.type.startsWith('image/')) {
+    cameraError.value = 'Only JPG, PNG, or WEBP image files are allowed.'
+    if (input) input.value = ''
+    return
+  }
+
+  if (file.size > MAX_SELFIE_UPLOAD_BYTES) {
+    cameraError.value = 'Image is too large. Please upload an image that is 4MB or smaller.'
+    if (input) input.value = ''
+    return
+  }
+
+  cameraError.value = ''
   completeVerification(file)
+  if (input) input.value = ''
 }
 
 watch(
@@ -1170,25 +1200,21 @@ defineExpose({
           <span>1</span>
           <small>Selfie</small>
         </div>
-        <span class="client-verification__line" :class="{ 'is-done': props.hasSelfie || isFaceDetected }" />
+        <span class="client-verification__line" :class="{ 'is-done': hasCaptureStageStarted }" />
         <div
           class="client-verification__step"
-          :class="{ 'is-active': isFaceDetected && !props.hasSelfie, 'is-done': props.hasSelfie }"
+          :class="{ 'is-active': hasCaptureStageStarted && !props.hasSelfie, 'is-done': props.hasSelfie }"
         >
           <span>2</span>
-          <small>Proceed</small>
+          <small>Continue</small>
         </div>
       </div>
 
       <div class="client-verification__panel">
         <div class="client-verification__copy">
-          <h4>Face Scan Required</h4>
+          <h4>Capture Face Photo</h4>
           <p>
-            {{
-              isDetectorFallbackMode
-                ? 'Automatic face scan fallback is active. Keep your face centered and still for auto capture.'
-                : 'Blurred faces, missing faces, and non-face objects should not pass this check. Hold still once your face is clear and centered.'
-            }}
+            Open your camera and capture a clear face photo, or upload one from your device, then continue to the next step.
           </p>
         </div>
 
@@ -1208,7 +1234,7 @@ defineExpose({
             <span>Starting camera...</span>
           </div>
           <div class="client-verification__overlay" aria-hidden="true">
-            <div v-if="!isCameraStarting" class="client-verification__scan-frame" :style="scanFrameStyle">
+            <div v-if="!isCameraStarting && isCameraReady" class="client-verification__scan-frame" :style="scanFrameStyle">
               <div class="client-verification__scan-corners">
                 <span />
                 <span />
@@ -1231,7 +1257,7 @@ defineExpose({
                 <span />
               </div>
               <div class="client-verification__scan-guide" />
-              <div class="client-verification__scan-orbit" :class="{ 'is-locked': isFaceDetected || isAutoSubmitting || isScanSuccessful }" />
+              <div class="client-verification__scan-orbit" :class="{ 'is-locked': isAutoSubmitting || isScanSuccessful || props.hasSelfie }" />
             </div>
             <div v-if="isScanSuccessful" class="client-verification__success-badge">
               <i class="bi bi-check-circle-fill" />
@@ -1245,17 +1271,43 @@ defineExpose({
         <p v-if="inlineErrorMessage" class="client-verification__error">{{ inlineErrorMessage }}</p>
 
         <div class="client-verification__actions">
-          <button type="button" class="client-verification__btn client-verification__btn--primary" :disabled="isCameraStarting" @click="startCamera">
+          <button
+            type="button"
+            class="client-verification__btn"
+            :class="isCameraReady ? 'client-verification__btn--ghost' : 'client-verification__btn--primary'"
+            :disabled="isCameraStarting || isAutoSubmitting"
+            @click="startCamera"
+          >
             {{ isCameraStarting ? 'Starting Camera...' : isCameraReady ? 'Restart Camera' : 'Open Camera' }}
           </button>
           <button
             v-if="isCameraReady"
             type="button"
+            class="client-verification__btn client-verification__btn--primary"
+            :disabled="isAutoSubmitting"
+            @click="handleCaptureAndContinue"
+          >
+            {{ isAutoSubmitting ? 'Capturing...' : 'Capture & Continue' }}
+          </button>
+          <button
+            v-if="isCameraReady"
+            type="button"
             class="client-verification__btn client-verification__btn--ghost"
+            :disabled="isAutoSubmitting"
             @click="switchCamera"
           >
             Switch Camera
           </button>
+          <label class="client-verification__btn client-verification__btn--ghost" :for="uploadInputId">
+            Upload Photo
+          </label>
+          <input
+            :id="uploadInputId"
+            class="client-verification__input"
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            @change="handleSelfieUpload"
+          />
         </div>
       </div>
     </div>
